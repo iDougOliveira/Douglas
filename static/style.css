@@ -50,3 +50,16 @@ button:disabled{cursor:wait;opacity:.6}
 .card-picker{max-width:650px}
 @media(max-width:700px){.community-board{gap:3px}.board-slot{width:45px;height:66px}.board-slot.turn-slot{margin-left:3px}.post-grid{grid-template-columns:1fr}.rank-choices{grid-template-columns:repeat(5,1fr)}}
 @media(max-width:480px){.study-config.single{grid-template-columns:1fr}.community-board{top:53%}.board-slot{width:39px;height:58px}.board-slot b{font-size:17px}.board-slot.selected span{font-size:21px}.suit-choice{min-height:100px}.suit-choice span{font-size:45px}.rank-choices{grid-template-columns:repeat(4,1fr)}}
+
+
+/* V3.1.1 — seletor rápido: baralho completo em um clique */
+.picker-tip{margin:-8px 0 14px;color:var(--muted);font-size:13px}
+.fast-deck{display:grid;gap:12px}
+.fast-deck-suit{display:grid;grid-template-columns:88px minmax(0,1fr);gap:10px;align-items:center;padding:10px;background:#091a14;border:1px solid var(--line);border-radius:12px}
+.fast-suit-label{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:2px}
+.fast-suit-label span{font-size:34px;line-height:34px}.fast-suit-label b{font-size:12px}
+.fast-cards{display:grid;grid-template-columns:repeat(13,minmax(36px,1fr));gap:5px}
+.fast-card{min-width:0;aspect-ratio:.72;padding:3px;background:#fff;border:2px solid #ddd;border-radius:7px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.fast-card b{font-size:16px;line-height:17px}.fast-card span{font-size:19px;line-height:19px}.fast-card:disabled{opacity:.14;cursor:not-allowed}
+@media(max-width:700px){.fast-deck-suit{grid-template-columns:1fr}.fast-suit-label{flex-direction:row;gap:7px}.fast-suit-label span{font-size:28px}.fast-cards{grid-template-columns:repeat(7,1fr)}.fast-card{aspect-ratio:.85}.card-picker{max-width:520px}}
+@media(max-width:420px){.fast-cards{grid-template-columns:repeat(5,1fr)}}
