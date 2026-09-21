@@ -15,7 +15,7 @@ from PIL import Image, ImageTk
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 
 
-APP_VERSION = "0.2.1"
+APP_VERSION = "0.2.2"
 APP_NAME = "PokerVision"
 
 
