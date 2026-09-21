@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.0.0">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.1.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.0.0 · MOTOR COM FONTES</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.1.0 · DECISÃO VISUAL AUTOMÁTICA</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -18,18 +18,32 @@
       </div>
       <input type="hidden" name="mode" value="cash"><input type="hidden" name="position" value="BTN">
       <input type="hidden" name="player_count" value="8">
-      <input type="hidden" name="card1"><input type="hidden" name="card2"><input type="hidden" name="completed_hand" value="true">
-      <div class="study-config">
-        <label>Carregar exemplo de estudo<select id="studyPreset"><option value="">Configuração manual</option><option value="cash6">Cash · 6 jogadores · 100 BB</option><option value="cash8">Cash · 8 jogadores · 100 BB (referência adaptada)</option><option value="mtt100">Torneio · 9 jogadores · 100 BB</option><option value="mtt75">Torneio · 9 jogadores · 75 BB</option><option value="mtt10">Torneio · 8 jogadores · 10 BB</option></select></label>
+      <input type="hidden" name="card1"><input type="hidden" name="card2">
+      <input type="hidden" name="flop1"><input type="hidden" name="flop2"><input type="hidden" name="flop3"><input type="hidden" name="turn"><input type="hidden" name="river">
+      <input type="hidden" name="street" value="preflop"><input type="hidden" name="completed_hand" value="true">
+      <div class="study-config single">
         <label>Stack efetivo no início da mão (BB)<input name="stack_bb" type="number" value="100" min="0.1" step="0.1" required></label>
+        <div class="auto-study"><b>Estudo automático</b><span>O motor cruza quantidade de jogadores, posição, stack e ação. Você não carrega exemplo manualmente.</span></div>
       </div>
-      <p class="hint">Exemplos alteram a configuração para estudo. Na revisão de uma mão real, use os valores que aconteceram. A banca total não define o tamanho da aposta.</p>
 
       <div class="visual-layout">
         <div>
           <h2 class="section-title">1. Posicione o botão</h2>
           <p class="hint">Você é o jogador destacado embaixo. Clique no assento que está com o botão.</p>
-          <div id="pokerTable" class="poker-table"><div class="felt"><div class="table-logo">POKER<br><small>COACH</small></div></div><div id="seats"></div></div>
+          <div id="pokerTable" class="poker-table">
+            <div class="felt">
+              <div class="table-logo">POKER<br><small>COACH</small></div>
+              <div class="community-board" aria-label="Cartas comunitárias">
+                <button type="button" class="board-slot" data-slot="flop1"><span>+</span><small>FLOP</small></button>
+                <button type="button" class="board-slot" data-slot="flop2"><span>+</span><small>FLOP</small></button>
+                <button type="button" class="board-slot" data-slot="flop3"><span>+</span><small>FLOP</small></button>
+                <button type="button" class="board-slot turn-slot" data-slot="turn"><span>+</span><small>TURN</small></button>
+                <button type="button" class="board-slot river-slot" data-slot="river"><span>+</span><small>RIVER</small></button>
+              </div>
+            </div>
+            <div id="seats"></div>
+          </div>
+          <div class="board-controls"><span id="streetReadout">PRÉ-FLOP</span><button type="button" id="clearBoard" class="mini-btn">Limpar mesa</button></div>
           <div class="position-readout">Sua posição: <strong id="heroPosition">BTN</strong></div>
           <p id="tableHint" class="hint" aria-live="polite">Carregando posições…</p>
         </div>
@@ -37,32 +51,37 @@
           <h2 class="section-title">2. Escolha suas cartas</h2>
           <p class="hint">Clique em cada espaço para abrir o baralho.</p>
           <div class="hole-cards"><button type="button" class="card-slot" data-slot="card1"><span>+</span><small>Carta 1</small></button><button type="button" class="card-slot" data-slot="card2"><span>+</span><small>Carta 2</small></button></div>
-          <h2 class="section-title situation-title">3. O que aconteceu antes?</h2>
-          <div class="action-choices"><button type="button" class="action-choice active" data-value="unopened">Todos desistiram</button><button type="button" class="action-choice" data-value="facing_raise">Primeiro aumento</button><button type="button" class="action-choice" data-value="limped">Houve limp</button><button type="button" class="action-choice" data-value="facing_3bet">Já houve re-raise</button></div>
-          <input type="hidden" name="situation" value="unopened">
-          <div id="raiseInputs" class="advanced-grid" hidden>
-            <label>Quem aumentou?<select name="opener_position"><option value="">Selecione a posição</option></select></label>
-            <label>Aumentou PARA (BB)<input name="open_to_bb" type="number" value="3" min="2" step="0.1"></label>
-            <label>Outros pagaram o aumento?<select name="callers"><option value="0">Não</option><option value="1">Sim</option></select></label>
-            <p class="hint">Valor total do raise, não o acréscimo. O app calcula quanto falta pagar pelo seu blind.</p>
+          <div id="preflopContext">
+            <h2 class="section-title situation-title">3. O que aconteceu antes?</h2>
+            <div class="action-choices"><button type="button" class="action-choice active" data-value="unopened">Todos desistiram</button><button type="button" class="action-choice" data-value="facing_raise">Primeiro aumento</button><button type="button" class="action-choice" data-value="limped">Houve limp</button><button type="button" class="action-choice" data-value="facing_3bet">Já houve re-raise</button></div>
+            <input type="hidden" name="situation" value="unopened">
+            <div id="raiseInputs" class="advanced-grid" hidden>
+              <label>Quem aumentou?<select name="opener_position"><option value="">Selecione a posição</option></select></label>
+              <label>Aumentou PARA (BB)<input name="open_to_bb" type="number" value="3" min="2" step="0.1"></label>
+              <label>Outros pagaram o aumento?<select name="callers"><option value="0">Não</option><option value="1">Sim</option></select></label>
+              <p class="hint">Valor total do raise, não o acréscimo.</p>
+            </div>
+          </div>
+          <div id="postflopContext" hidden>
+            <h2 class="section-title situation-title">3. Ação no <span id="postStreetName">FLOP</span></h2>
+            <div class="action-choices post-actions">
+              <button type="button" class="post-action active" data-value="checked_to_hero">Ninguém apostou</button>
+              <button type="button" class="post-action" data-value="facing_bet">Tenho aposta para pagar</button>
+            </div>
+            <input type="hidden" name="post_action" value="checked_to_hero">
+            <div class="advanced-grid post-grid">
+              <label>Pote atual (BB)<input name="pot_bb" type="number" value="6" min="0.1" step="0.1"></label>
+              <label id="callAmount" hidden>Quanto pagar (BB)<input name="call_bb" type="number" value="2" min="0" step="0.1"></label>
+              <label>Adversários ainda na mão<select name="active_opponents"><option value="1">1</option><option value="2">2+</option></select></label>
+            </div>
           </div>
           <label id="tournamentContext" hidden>Contexto do torneio<select name="icm_context"><option value="unknown">Não informado</option><option value="none">Estudo sem pressão de premiação e sem bounty</option><option value="pressure">Bolha / final / satélite / bounty</option></select></label>
           <button type="button" id="advancedToggle" class="advanced-toggle">Ajustes avançados <span>⌄</span></button>
           <div id="advanced" class="advanced-grid" hidden>
-            <label>Etapa<select name="street"><option value="preflop">Pré-flop</option><option value="flop">Flop</option><option value="turn">Turn</option><option value="river">River</option></select></label>
             <label>Ante total da mesa (BB)<input name="ante_bb" type="number" value="0" min="0" step="0.1"></label>
-            <div id="postflopInputs" class="advanced-grid wide" hidden>
-              <label>Pote antes do seu call (BB)<input name="pot_bb" type="number" value="10" min="0.1" step="0.1"></label>
-              <label>Quanto falta pagar (BB)<input name="call_bb" type="number" value="5" min="0" step="0.1"></label>
-              <label>Seu stack disponível agora (BB)<input name="remaining_bb" type="number" value="100" min="0" step="0.1"></label>
-              <label>Equity contra o range adversário (%)<input name="estimated_equity" type="number" min="0" max="100" step="0.1" placeholder="Não calculada pelo app"></label>
-              <label>Adversários na mão<select name="active_opponents"><option value="1">1</option><option value="2">2 ou mais</option></select></label>
-              <label class="confirm"><input name="closes_action" type="checkbox">O call encerra todas as apostas: river ou all-in, sem side pot e sem rake adicional.</label>
-              <p class="hint wide">Inclua a aposta do adversário no pote. Este módulo calcula pot odds; não interpreta o board nem estima equity.</p>
-            </div>
           </div>
-          <label class="confirm visual-confirm"><input id="studyConfirm" type="checkbox" required> É uma simulação ou mão já encerrada</label>
-          <button class="primary analyze-btn" type="submit" disabled>Analisar jogada</button>
+          <div id="autoStatus" class="auto-status">Escolha suas duas cartas para começar.</div>
+          <button class="primary analyze-btn" type="submit" disabled>Atualizar decisão</button>
         </div>
       </div>
     </form>
@@ -84,7 +103,7 @@
     <p>As regras antigas foram substituídas por consultas determinísticas aos resumos públicos de ranges, diretrizes de especialistas e cálculos de pot odds. O motor não executa um solver nem aprende sozinho.</p>
     <ul><li>Cash 6-max, 100 BB: abertura por posição; 2,5 BB fora dos blinds.</li><li>Cash 8-max: resumo de abertura e tamanho de 3 BB da imagem publicada. Aplicação limitada a 100 BB por decisão do app; o texto não informa stack nem rake. É uma referência adaptada.</li><li>Torneio 9-max: resumos de abertura a 75 e 100 BB. A 75 BB, o resumo não informa o tamanho do raise.</li><li>Torneio 8-max, 10 BB: resumo de stack curto. Ações agrupadas permanecem “MISTA”, sem frequência inventada.</li><li>Cash 100 BB, sem ante: diretriz de 3-bet com QQ+/AK contra um único open de 2 a 5 BB, sem callers. Considera posição do agressor e posição relativa no pós-flop. Não é um range completo de defesa.</li><li>Pós-flop: pot odds; decisão de call/fold por EV apenas em cash, contra um adversário, com equity informada e encerramento de todas as apostas, sem side pots nem rake adicional.</li></ul>
     <p>As listas escritas da fonte são resumos e não reproduzem todas as frequências das imagens. “FOLD” numa consulta de abertura significa fora desse resumo; não é uma afirmação de fold GTO universal. No SB, o conjunto publicado mistura limp e raise sem discriminar a ação de cada mão.</p>
-    <p>Não há interpolação entre mesas/stacks, ajuste de rake, cálculo de ICM/bounty, análise de board ou ranges completos contra limp, 3-bet, 4-bet e squeeze. Nesses casos o motor mostra a lacuna. “REVISAR” não significa desistir.</p>
+    <p>A V3.1 cruza automaticamente o estudo mais próximo quando mesa/stack não coincidem exatamente e identifica o board no pós-flop. A decisão pós-flop usa força feita, draws, textura e pot odds como heurística educacional; não é uma solução de solver.</p>
     <h3>Fontes implementadas</h3><ul>
     <li><a href="https://pokercoaching.com/preflop-charts/" target="_blank" rel="noopener noreferrer">PokerCoaching: ranges e tamanhos de abertura</a></li>
     <li><a href="https://upswingpoker.com/3-bet-strategy-aggressive-preflop/" target="_blank" rel="noopener noreferrer">Upswing: núcleo de valor e tamanhos de 3-bet</a></li>
@@ -94,6 +113,10 @@
     <p>Ferramenta independente para simulações e revisão de mãos encerradas. Não lê telas nem executa apostas.</p>
   </div></section>
 </main>
-<div id="cardPicker" class="modal" hidden><div class="modal-card"><div class="modal-head"><div><h2>Escolha a carta</h2><small id="pickerLabel">Carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div><div id="deck" class="deck"></div></div></div>
-<script src="/app.js?v=3.0.0"></script>
+<div id="cardPicker" class="modal" hidden><div class="modal-card card-picker">
+  <div class="modal-head"><div><h2 id="pickerTitle">Escolha o naipe</h2><small id="pickerLabel">Carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div>
+  <div id="suitStep" class="picker-step"><div id="suitChoices" class="suit-choices"></div></div>
+  <div id="rankStep" class="picker-step" hidden><button type="button" id="backToSuit" class="mini-btn">← trocar naipe</button><div id="rankChoices" class="rank-choices"></div></div>
+</div></div>
+<script src="/app.js?v=3.1.0"></script>
 </body></html>
