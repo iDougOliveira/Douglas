@@ -12,9 +12,44 @@ from tkinter import messagebox, ttk
 import mss
 from PIL import Image, ImageTk
 
+from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 
-APP_VERSION = "0.1.0"
+
+APP_VERSION = "0.2.0"
 APP_NAME = "PokerVision"
+
+
+class StableReading:
+    """Require the same valid reading for a few frames before confirming it."""
+
+    def __init__(self, confirmations: int = 3) -> None:
+        self.confirmations = confirmations
+        self.candidate: tuple[str, ...] | None = None
+        self.count = 0
+        self.stable: tuple[str, ...] = ()
+        self.ready = False
+
+    def reset(self) -> None:
+        self.candidate = None
+        self.count = 0
+        self.stable = ()
+        self.ready = False
+
+    def observe(self, value: tuple[str, ...] | None) -> None:
+        if value is None:
+            self.candidate = None
+            self.count = 0
+            return
+
+        if value == self.candidate:
+            self.count += 1
+        else:
+            self.candidate = value
+            self.count = 1
+
+        if self.count >= self.confirmations:
+            self.stable = value
+            self.ready = True
 
 
 def enable_dpi_awareness() -> None:
@@ -78,6 +113,12 @@ def grab_box(box: dict) -> Image.Image:
     return Image.frombytes("RGB", shot.size, shot.rgb)
 
 
+def format_codes(codes: tuple[str, ...]) -> str:
+    if not codes:
+        return "SEM CARTAS"
+    return "  ".join(card_text(code) for code in codes)
+
+
 class RegionSelector:
     def __init__(
         self,
@@ -118,7 +159,7 @@ class RegionSelector:
         self.canvas.create_rectangle(
             16,
             16,
-            590,
+            660,
             72,
             fill="#07130f",
             outline="#38d996",
@@ -210,10 +251,12 @@ class PokerVisionApp:
         self.running = False
         self.hand_photo: ImageTk.PhotoImage | None = None
         self.board_photo: ImageTk.PhotoImage | None = None
+        self.hand_tracker = StableReading(confirmations=3)
+        self.board_tracker = StableReading(confirmations=3)
 
         root.title(f"{APP_NAME} {APP_VERSION}")
-        root.geometry("920x640")
-        root.minsize(760, 560)
+        root.geometry("960x700")
+        root.minsize(780, 600)
         root.configure(bg="#07130f")
         root.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -243,6 +286,12 @@ class PokerVisionApp:
             font=("Segoe UI", 20, "bold"),
         )
         self.style.configure(
+            "Detect.TLabel",
+            background="#07130f",
+            foreground="#38d996",
+            font=("Segoe UI", 13, "bold"),
+        )
+        self.style.configure(
             "Status.TLabel",
             background="#0e211a",
             foreground="#38d996",
@@ -267,15 +316,15 @@ class PokerVisionApp:
         ttk.Label(top, text="PokerVision", style="Title.TLabel").pack(side="left")
         ttk.Label(
             top,
-            text=f"v{APP_VERSION} · captura por coordenadas",
+            text=f"v{APP_VERSION} · reconhecimento visual",
             style="Muted.TLabel",
         ).pack(side="right", pady=(8, 0))
 
         ttk.Label(
             outer,
             text=(
-                "Selecione uma vez as regiões da sua mão e do board. "
-                "Depois o programa captura somente essas coordenadas."
+                "Captura por coordenadas. Ausência de cartas é um estado normal; "
+                "leituras incertas não são confirmadas."
             ),
             style="Muted.TLabel",
         ).pack(anchor="w", pady=(4, 14))
@@ -310,6 +359,12 @@ class PokerVisionApp:
         self.hand_coords.pack(anchor="w")
         self.board_coords = ttk.Label(coords, text="")
         self.board_coords.pack(anchor="w", pady=(4, 0))
+        self.street_readout = ttk.Label(
+            coords,
+            text="STREET: —",
+            style="Detect.TLabel",
+        )
+        self.street_readout.pack(anchor="w", pady=(8, 0))
 
         previews = ttk.Frame(outer)
         previews.pack(fill="both", expand=True)
@@ -345,6 +400,23 @@ class PokerVisionApp:
         )
         self.board_preview.grid(
             row=1, column=1, sticky="nsew", padx=(7, 0), pady=(6, 0)
+        )
+
+        self.hand_detect = ttk.Label(
+            previews,
+            text="Detectado: —",
+            style="Detect.TLabel",
+        )
+        self.hand_detect.grid(
+            row=2, column=0, sticky="w", padx=(0, 7), pady=(8, 0)
+        )
+        self.board_detect = ttk.Label(
+            previews,
+            text="Detectado: —",
+            style="Detect.TLabel",
+        )
+        self.board_detect.grid(
+            row=2, column=1, sticky="w", padx=(7, 0), pady=(8, 0)
         )
 
         bottom = ttk.Frame(outer)
@@ -387,6 +459,8 @@ class PokerVisionApp:
             self.root.deiconify()
             self.root.lift()
             self.root.focus_force()
+            self.hand_tracker.reset()
+            self.board_tracker.reset()
             self.refresh_region_labels()
             self.preview_once()
 
@@ -396,7 +470,7 @@ class PokerVisionApp:
             text=self.format_region("BOARD", self.config["board"])
         )
         if self.config["hand"] and self.config["board"]:
-            self.status.configure(text="Pronto para iniciar o monitoramento.")
+            self.status.configure(text="Pronto para iniciar o reconhecimento.")
         else:
             self.status.configure(text="Configure as duas regiões.")
 
@@ -410,19 +484,28 @@ class PokerVisionApp:
         )
 
     @staticmethod
-    def fit_preview(image: Image.Image, max_w: int = 410, max_h: int = 330) -> Image.Image:
+    def fit_preview(
+        image: Image.Image,
+        max_w: int = 430,
+        max_h: int = 330,
+    ) -> Image.Image:
         copy = image.copy()
         copy.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
         return copy
 
-    def preview_region(self, region: dict | None, widget: tk.Label, kind: str) -> None:
+    def preview_region(
+        self,
+        region: dict | None,
+        widget: tk.Label,
+        kind: str,
+    ) -> Image.Image | None:
         if not region:
             widget.configure(image="", text="Região não configurada")
             if kind == "hand":
                 self.hand_photo = None
             else:
                 self.board_photo = None
-            return
+            return None
 
         image = grab_box(region)
         preview = self.fit_preview(image)
@@ -432,13 +515,98 @@ class PokerVisionApp:
             self.hand_photo = photo
         else:
             self.board_photo = photo
+        return image
+
+    @staticmethod
+    def valid_value(reading, valid_counts: set[int]) -> tuple[str, ...] | None:
+        occupied = sum(reading.occupied_slots)
+        if reading.uncertain or occupied not in valid_counts:
+            return None
+        if len(reading.codes) != occupied:
+            return None
+        return reading.codes
+
+    def update_recognition(
+        self,
+        hand_image: Image.Image,
+        board_image: Image.Image,
+    ) -> None:
+        hand = recognize_hand(hand_image)
+        board = recognize_board(board_image)
+
+        hand_value = self.valid_value(hand, {0, 2})
+        board_value = self.valid_value(board, {0, 3, 4, 5})
+
+        if hand_value is None:
+            self.hand_detect.configure(text="Detectado: LEITURA INCERTA")
+        else:
+            self.hand_detect.configure(text=f"Detectado: {format_codes(hand_value)}")
+            self.hand_tracker.observe(hand_value)
+
+        if board_value is None:
+            count = sum(board.occupied_slots)
+            label = "TRANSIÇÃO" if count in {1, 2} else "LEITURA INCERTA"
+            self.board_detect.configure(text=f"Detectado: {label}")
+        else:
+            self.board_detect.configure(text=f"Detectado: {format_codes(board_value)}")
+            self.board_tracker.observe(board_value)
+
+        raw_street = street_from_board(board)
+        self.street_readout.configure(text=f"STREET: {raw_street}")
+
+        if not self.running:
+            return
+
+        if hand_value is None or board_value is None:
+            self.status.configure(
+                text="LENDO · aguardando uma leitura estável por 3 capturas."
+            )
+            return
+
+        if not self.hand_tracker.ready or not self.board_tracker.ready:
+            self.status.configure(
+                text="CONFIRMANDO · a mesma leitura precisa aparecer em 3 capturas."
+            )
+            return
+
+        stable_hand = self.hand_tracker.stable
+        stable_board = self.board_tracker.stable
+        stable_street = {
+            0: "PRÉ-FLOP",
+            3: "FLOP",
+            4: "TURN",
+            5: "RIVER",
+        }.get(len(stable_board), "INCERTO")
+
+        if not stable_hand:
+            self.status.configure(
+                text=f"AGUARDANDO MÃO · BOARD: {format_codes(stable_board)}"
+            )
+            return
+
+        self.status.configure(
+            text=(
+                f"CONFIRMADO · MÃO: {format_codes(stable_hand)} · "
+                f"BOARD: {format_codes(stable_board)} · {stable_street}"
+            )
+        )
 
     def preview_once(self) -> None:
         try:
-            self.preview_region(self.config["hand"], self.hand_preview, "hand")
-            self.preview_region(self.config["board"], self.board_preview, "board")
+            hand_image = self.preview_region(
+                self.config["hand"],
+                self.hand_preview,
+                "hand",
+            )
+            board_image = self.preview_region(
+                self.config["board"],
+                self.board_preview,
+                "board",
+            )
+            if hand_image is not None and board_image is not None:
+                self.update_recognition(hand_image, board_image)
         except Exception as exc:
-            self.status.configure(text=f"Falha de captura: {exc}")
+            self.status.configure(text=f"Falha de captura/reconhecimento: {exc}")
 
     def start(self) -> None:
         if not self.config["hand"] or not self.config["board"]:
@@ -449,14 +617,21 @@ class PokerVisionApp:
             return
         if self.running:
             return
+
+        self.hand_tracker.reset()
+        self.board_tracker.reset()
         self.running = True
-        self.status.configure(text="CAPTURA ATIVA · lendo MÃO e BOARD pelas coordenadas.")
+        self.status.configure(
+            text="RECONHECIMENTO ATIVO · confirmando leituras em 3 capturas."
+        )
         self.refresh_loop()
 
     def stop(self) -> None:
         self.running = False
         if self.config["hand"] and self.config["board"]:
-            self.status.configure(text="Monitoramento parado. Regiões continuam salvas.")
+            self.status.configure(
+                text="Monitoramento parado. Regiões continuam salvas."
+            )
 
     def refresh_loop(self) -> None:
         if not self.running:
@@ -471,6 +646,7 @@ class PokerVisionApp:
                 "Configure MÃO e BOARD antes de salvar uma amostra.",
             )
             return
+
         stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         folder = capture_dir()
         try:
@@ -479,6 +655,7 @@ class PokerVisionApp:
         except Exception as exc:
             messagebox.showerror("PokerVision", f"Falha ao salvar amostra:\n{exc}")
             return
+
         messagebox.showinfo(
             "PokerVision",
             f"Amostras salvas em:\n{folder}",
