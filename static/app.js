@@ -58,6 +58,44 @@ const suitData=[
 ];
 const ranks=['A','K','Q','J','T','9','8','7','6','5','4','3','2'];
 
+const POSITION_COLORS={
+  'UTG':'#ff5c5c',
+  'UTG+1':'#ff8a3d',
+  'UTG+2':'#ffd166',
+  'MP':'#b7e548',
+  'LJ':'#40d98a',
+  'HJ':'#22d3ee',
+  'CO':'#4ea5ff',
+  'BTN':'#a78bfa',
+  'BTN/SB':'#d96bff',
+  'SB':'#ff6fb5',
+  'BB':'#e2e8f0'
+};
+
+function positionColor(position){
+  return POSITION_COLORS[position]||'#9bb5aa';
+}
+
+function applyPositionColor(node,position){
+  if(!node) return;
+  node.dataset.position=position||'';
+  node.style.setProperty('--pos-color',positionColor(position));
+}
+
+function positionTag(position){
+  const safe=escapeHTML(position||'');
+  const color=positionColor(position);
+  return `<span class="position-tag" style="--pos-color:${color}">${safe}</span>`;
+}
+
+function renderPositionLegend(){
+  const box=$('#positionLegend');
+  if(!box || !positionOrder[playerCount]) return;
+  box.innerHTML=positionOrder[playerCount]
+    .map(pos=>`<span class="position-legend-item" style="--pos-color:${positionColor(pos)}"><i></i>${escapeHTML(pos)}</span>`)
+    .join('');
+}
+
 function invalidateReview(message='Atualizando decisão…'){
   reviewRevision++;
   $('#autoStatus').textContent=message;
@@ -82,6 +120,7 @@ function renderTable(){
     const b=document.createElement('button');
     b.type='button';
     b.className='seat'+(i===0?' hero':'')+(i===dealerSeat?' dealer':'');
+    applyPositionColor(b,pos);
     b.style.left=x+'%';
     b.style.top=y+'%';
     b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':'♟'}</span><b>${pos}</b>${i===dealerSeat?'<i>D</i>':''}`;
@@ -99,6 +138,8 @@ function renderTable(){
   const heroOffset=(playerCount-dealerSeat)%playerCount;
   const heroPos=positionOrder[playerCount][heroOffset];
   $('#heroPosition').textContent=heroPos;
+  applyPositionColor($('#heroPosition'),heroPos);
+  applyPositionColor($('.position-readout'),heroPos);
   $('#reviewForm').elements.position.value=heroPos;
   $('#reviewForm').elements.player_count.value=playerCount;
   $('#tableHint').textContent=playerCount===2
@@ -110,6 +151,7 @@ function renderTable(){
     b.classList.toggle('active',selected);
     b.setAttribute('aria-pressed',String(selected));
   });
+  renderPositionLegend();
   syncContext();
 }
 
@@ -244,8 +286,11 @@ function syncContext(){
   const heroIndex=order.indexOf(f.position.value);
   const options=heroIndex>=0?order.slice(0,heroIndex):[];
   f.opener_position.innerHTML='<option value="">Selecione a posição</option>'+
-    options.map(p=>`<option value="${p}">${p}</option>`).join('');
+    options.map(p=>`<option value="${p}" style="color:${positionColor(p)}">● ${p}</option>`).join('');
   if(options.includes(previous)) f.opener_position.value=previous;
+  const opener=f.opener_position.value;
+  applyPositionColor(f.opener_position,opener);
+  f.opener_position.classList.toggle('position-selected',Boolean(opener));
 }
 
 $('#reviewForm').addEventListener('input',e=>{
@@ -255,8 +300,12 @@ $('#reviewForm').addEventListener('input',e=>{
   }
 });
 
-$('#reviewForm').addEventListener('change',()=>{
+$('#reviewForm').addEventListener('change',e=>{
   invalidateReview();
+  if(e.target?.name==='opener_position'){
+    applyPositionColor(e.target,e.target.value);
+    e.target.classList.toggle('position-selected',Boolean(e.target.value));
+  }
   syncContext();
   scheduleAnalysis();
 });
@@ -544,7 +593,7 @@ function renderResult(r){
     <h2>${escapeHTML(r.hand)} · ${escapeHTML(r.sizing)}${bet}</h2>
     ${board}
     <p><b>${escapeHTML(r.profile)}</b></p>
-    <p>Mesa de ${r.player_count} · ${escapeHTML(r.position)}${r.study_stack_bb!=null?` · estudo-base ${r.study_stack_bb} BB`:''}</p>
+    <p>Mesa de ${r.player_count} · ${positionTag(r.position)}${r.study_stack_bb!=null?` · estudo-base ${r.study_stack_bb} BB`:''}</p>
     <ul>${(r.notes||[]).map(n=>`<li>${escapeHTML(n)}</li>`).join('')}</ul>
     ${rangeGrid(r)}
     <p class="source-links">${sources}</p>
