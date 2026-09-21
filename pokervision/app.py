@@ -1,13 +1,17 @@
 from __future__ import annotations
 
 import ctypes
+import ipaddress
 import json
 import os
+import threading
 import time
 from datetime import datetime
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
+from urllib.parse import urlparse
 
 import mss
 from PIL import Image, ImageTk
@@ -15,8 +19,119 @@ from PIL import Image, ImageTk
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 
 
-APP_VERSION = "0.2.2"
+APP_VERSION = "0.3.0"
 APP_NAME = "PokerVision"
+BRIDGE_HOST = "127.0.0.1"
+BRIDGE_PORT = 8766
+_BRIDGE_LOCK = threading.Lock()
+_BRIDGE_STATE = {
+    "version": APP_VERSION,
+    "running": False,
+    "confirmed": False,
+    "hand": [],
+    "board": [],
+    "street": "AGUARDANDO",
+    "updated_at": 0.0,
+}
+
+
+def _bridge_publish(
+    *,
+    running: bool | None = None,
+    confirmed: bool | None = None,
+    hand: tuple[str, ...] | list[str] | None = None,
+    board: tuple[str, ...] | list[str] | None = None,
+    street: str | None = None,
+) -> None:
+    with _BRIDGE_LOCK:
+        if running is not None:
+            _BRIDGE_STATE["running"] = bool(running)
+        if confirmed is not None:
+            _BRIDGE_STATE["confirmed"] = bool(confirmed)
+        if hand is not None:
+            _BRIDGE_STATE["hand"] = list(hand)
+        if board is not None:
+            _BRIDGE_STATE["board"] = list(board)
+        if street is not None:
+            _BRIDGE_STATE["street"] = str(street)
+        _BRIDGE_STATE["updated_at"] = time.time()
+
+
+def _bridge_snapshot() -> dict:
+    with _BRIDGE_LOCK:
+        return dict(_BRIDGE_STATE)
+
+
+def _origin_allowed(origin: str) -> bool:
+    if not origin:
+        return True
+    try:
+        parsed = urlparse(origin)
+        host = (parsed.hostname or "").lower()
+        if parsed.scheme not in {"http", "https"}:
+            return False
+        if host in {"localhost", "127.0.0.1", "beelink"} or host.endswith(".local"):
+            return True
+        address = ipaddress.ip_address(host)
+        return bool(address.is_private or address.is_loopback)
+    except (ValueError, TypeError):
+        return False
+
+
+class BridgeHandler(BaseHTTPRequestHandler):
+    def _cors(self) -> bool:
+        origin = self.headers.get("Origin", "")
+        allowed = _origin_allowed(origin)
+        if allowed and origin:
+            self.send_header("Access-Control-Allow-Origin", origin)
+            self.send_header("Vary", "Origin")
+        self.send_header("Access-Control-Allow-Private-Network", "true")
+        self.send_header("Cache-Control", "no-store")
+        return allowed
+
+    def do_OPTIONS(self) -> None:
+        origin = self.headers.get("Origin", "")
+        if not _origin_allowed(origin):
+            self.send_response(403)
+            self.end_headers()
+            return
+        self.send_response(204)
+        self._cors()
+        self.send_header("Access-Control-Allow-Methods", "GET, OPTIONS")
+        self.send_header("Access-Control-Allow-Headers", "Content-Type")
+        self.end_headers()
+
+    def do_GET(self) -> None:
+        origin = self.headers.get("Origin", "")
+        if not _origin_allowed(origin):
+            self.send_response(403)
+            self.end_headers()
+            return
+        if self.path.split("?", 1)[0] != "/state":
+            self.send_response(404)
+            self.end_headers()
+            return
+        raw = json.dumps(_bridge_snapshot(), ensure_ascii=False).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(raw)))
+        self._cors()
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, _format: str, *_args) -> None:
+        return
+
+
+def start_bridge_server() -> None:
+    def run() -> None:
+        try:
+            server = ThreadingHTTPServer((BRIDGE_HOST, BRIDGE_PORT), BridgeHandler)
+            server.serve_forever()
+        except OSError as exc:
+            print(f"PokerVision bridge indisponível em {BRIDGE_HOST}:{BRIDGE_PORT}: {exc}")
+
+    threading.Thread(target=run, name="PokerVisionBridge", daemon=True).start()
 
 
 class StableReading:
@@ -253,6 +368,13 @@ class PokerVisionApp:
         self.board_photo: ImageTk.PhotoImage | None = None
         self.hand_tracker = StableReading(confirmations=3)
         self.board_tracker = StableReading(confirmations=3)
+        _bridge_publish(
+            running=False,
+            confirmed=False,
+            hand=[],
+            board=[],
+            street="AGUARDANDO",
+        )
 
         root.title(f"{APP_NAME} {APP_VERSION}")
         root.geometry("960x700")
@@ -365,6 +487,12 @@ class PokerVisionApp:
             style="Detect.TLabel",
         )
         self.street_readout.pack(anchor="w", pady=(8, 0))
+        self.bridge_readout = ttk.Label(
+            coords,
+            text=f"SITE: pronto em {BRIDGE_HOST}:{BRIDGE_PORT}",
+            style="Muted.TLabel",
+        )
+        self.bridge_readout.pack(anchor="w", pady=(5, 0))
 
         previews = ttk.Frame(outer)
         previews.pack(fill="both", expand=True)
@@ -558,12 +686,20 @@ class PokerVisionApp:
             return
 
         if hand_value is None or board_value is None:
+            _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
                 text="LENDO · aguardando uma leitura estável por 3 capturas."
             )
             return
 
-        if not self.hand_tracker.ready or not self.board_tracker.ready:
+        current_confirmed = (
+            self.hand_tracker.ready
+            and self.board_tracker.ready
+            and self.hand_tracker.stable == hand_value
+            and self.board_tracker.stable == board_value
+        )
+        if not current_confirmed:
+            _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
                 text="CONFIRMANDO · a mesma leitura precisa aparecer em 3 capturas."
             )
@@ -578,16 +714,24 @@ class PokerVisionApp:
             5: "RIVER",
         }.get(len(stable_board), "INCERTO")
 
+        _bridge_publish(
+            running=self.running,
+            confirmed=True,
+            hand=stable_hand,
+            board=stable_board,
+            street=stable_street,
+        )
+
         if not stable_hand:
             self.status.configure(
-                text=f"AGUARDANDO MÃO · BOARD: {format_codes(stable_board)}"
+                text=f"AGUARDANDO MÃO · BOARD: {format_codes(stable_board)} · site sincronizado"
             )
             return
 
         self.status.configure(
             text=(
                 f"CONFIRMADO · MÃO: {format_codes(stable_hand)} · "
-                f"BOARD: {format_codes(stable_board)} · {stable_street}"
+                f"BOARD: {format_codes(stable_board)} · {stable_street} · SITE OK"
             )
         )
 
@@ -621,6 +765,7 @@ class PokerVisionApp:
         self.hand_tracker.reset()
         self.board_tracker.reset()
         self.running = True
+        _bridge_publish(running=True, confirmed=False)
         self.status.configure(
             text="RECONHECIMENTO ATIVO · confirmando leituras em 3 capturas."
         )
@@ -628,6 +773,7 @@ class PokerVisionApp:
 
     def stop(self) -> None:
         self.running = False
+        _bridge_publish(running=False, confirmed=False)
         if self.config["hand"] and self.config["board"]:
             self.status.configure(
                 text="Monitoramento parado. Regiões continuam salvas."
@@ -663,11 +809,13 @@ class PokerVisionApp:
 
     def close(self) -> None:
         self.running = False
+        _bridge_publish(running=False, confirmed=False)
         self.root.destroy()
 
 
 def main() -> None:
     enable_dpi_awareness()
+    start_bridge_server()
     root = tk.Tk()
     PokerVisionApp(root)
     root.mainloop()
