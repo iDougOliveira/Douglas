@@ -63,3 +63,15 @@ button:disabled{cursor:wait;opacity:.6}
 .fast-card b{font-size:16px;line-height:17px}.fast-card span{font-size:19px;line-height:19px}.fast-card:disabled{opacity:.14;cursor:not-allowed}
 @media(max-width:700px){.fast-deck-suit{grid-template-columns:1fr}.fast-suit-label{flex-direction:row;gap:7px}.fast-suit-label span{font-size:28px}.fast-cards{grid-template-columns:repeat(7,1fr)}.fast-card{aspect-ratio:.85}.card-picker{max-width:520px}}
 @media(max-width:420px){.fast-cards{grid-template-columns:repeat(5,1fr)}}
+
+
+/* V3.2 — PokerVision bridge + entrada rápida */
+.vision-bar{display:flex;align-items:center;gap:9px;min-height:42px;margin:8px 0 12px;padding:9px 10px;border:1px solid var(--line);border-radius:10px;background:#091a14;color:var(--muted);font-size:13px}
+.vision-bar #visionStatus{flex:1;min-width:0}.vision-dot{width:10px;height:10px;border-radius:50%;background:#6e8179;box-shadow:0 0 0 3px #ffffff0b;flex:0 0 auto}
+.vision-bar.connected{border-color:#247d5c}.vision-bar.connected .vision-dot{background:var(--green);box-shadow:0 0 10px #38d99688}
+.vision-bar.waiting .vision-dot{background:var(--gold)}.vision-bar.disconnected .vision-dot{background:var(--danger)}.vision-bar.paused .vision-dot{background:#8b9b94}
+#visionToggle{white-space:nowrap}
+.quick-values{display:flex;gap:5px;flex-wrap:wrap;margin-top:2px}
+.quick-value{padding:6px 9px;min-width:38px;font-size:12px;border-radius:8px;background:#132c23}
+.quick-value:hover,.quick-value.active{border-color:var(--green);color:var(--green)}
+@media(max-width:480px){.vision-bar{align-items:flex-start;flex-wrap:wrap}.vision-bar #visionStatus{flex-basis:calc(100% - 22px)}#visionToggle{margin-left:19px}}
