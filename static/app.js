@@ -44,6 +44,10 @@ let positionOrder={};
 let playerCount=8;
 let dealerSeat=0;
 let activeCardSlot='card1';
+let visionEnabled=true;
+let visionTimer=null;
+let visionLastSignature='';
+const VISION_URL='http://127.0.0.1:8766/state';
 
 const boardFields=['flop1','flop2','flop3','turn','river'];
 const suitData=[
@@ -163,10 +167,21 @@ $$('.action-choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.post-action').forEach(b=>b.onclick=()=>{
-  $$('.post-action').forEach(x=>x.classList.remove('active'));
+$('.post-action').forEach(b=>b.onclick=()=>{
+  $('.post-action').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   $('#reviewForm').elements.post_action.value=b.dataset.value;
+  invalidateReview();
+  syncContext();
+  scheduleAnalysis();
+});
+
+$('.quick-value').forEach(b=>b.onclick=()=>{
+  const input=$('#reviewForm').elements[b.dataset.target];
+  if(!input) return;
+  input.value=b.dataset.value;
+  $(`.quick-value[data-target="${b.dataset.target}"]`).forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
   invalidateReview();
   syncContext();
   scheduleAnalysis();
@@ -365,6 +380,117 @@ $('#clearBoard').onclick=()=>{
   scheduleAnalysis();
 };
 
+function validVisionCard(card){
+  return typeof card==='string' && /^[AKQJT2-9][SHDC]$/.test(card);
+}
+
+function setVisionBar(kind,message){
+  const bar=$('#visionBar');
+  if(!bar) return;
+  bar.classList.remove('connected','waiting','disconnected','paused');
+  bar.classList.add(kind);
+  $('#visionStatus').textContent=message;
+}
+
+function setVisionEnabled(enabled){
+  visionEnabled=Boolean(enabled);
+  const button=$('#visionToggle');
+  if(button) button.textContent=visionEnabled?'Automático ON':'Automático OFF';
+  try{localStorage.setItem('pokercoach.visionEnabled',visionEnabled?'1':'0')}catch(e){}
+  if(!visionEnabled) setVisionBar('paused','Leitura visual pausada · seleção manual ativa');
+}
+
+function applyVisionState(state){
+  if(!visionEnabled || !state?.running || !state?.confirmed) return;
+
+  const hand=Array.isArray(state.hand)?state.hand:[];
+  const board=Array.isArray(state.board)?state.board:[];
+  if(!([0,2].includes(hand.length) && [0,3,4,5].includes(board.length))) return;
+  if(!hand.every(validVisionCard) || !board.every(validVisionCard)) return;
+
+  const all=[...hand,...board];
+  if(new Set(all).size!==all.length) return;
+
+  const signature=JSON.stringify([hand,board]);
+  if(signature===visionLastSignature) return;
+  visionLastSignature=signature;
+
+  const f=$('#reviewForm').elements;
+  const desired={
+    card1:hand[0]||'',
+    card2:hand[1]||'',
+    flop1:board[0]||'',
+    flop2:board[1]||'',
+    flop3:board[2]||'',
+    turn:board[3]||'',
+    river:board[4]||''
+  };
+
+  let changed=false;
+  Object.entries(desired).forEach(([slot,value])=>{
+    if(f[slot].value!==value){
+      f[slot].value=value;
+      renderCardSlot(slot);
+      changed=true;
+    }
+  });
+
+  if(changed){
+    invalidateReview(`PokerVision: ${state.street||'cartas atualizadas'}`);
+    updateStreet();
+    scheduleAnalysis();
+  }
+}
+
+async function pollPokerVision(){
+  clearTimeout(visionTimer);
+  try{
+    const controller=new AbortController();
+    const timeout=setTimeout(()=>controller.abort(),700);
+    const response=await fetch(VISION_URL,{
+      method:'GET',
+      mode:'cors',
+      cache:'no-store',
+      signal:controller.signal
+    });
+    clearTimeout(timeout);
+    if(!response.ok) throw new Error('bridge indisponível');
+    const state=await response.json();
+
+    if(!visionEnabled){
+      setVisionBar('paused','PokerVision encontrado · automático pausado');
+    }else if(!state.running){
+      setVisionBar('waiting','PokerVision conectado · clique em Iniciar monitoramento');
+    }else if(!state.confirmed){
+      setVisionBar('waiting','PokerVision conectado · confirmando leitura…');
+    }else{
+      const hand=(state.hand||[]).length?state.hand.join(' '):'sem mão';
+      setVisionBar('connected',`PokerVision OK · ${state.street||''} · ${hand}`);
+      applyVisionState(state);
+    }
+  }catch(e){
+    if(visionEnabled) setVisionBar('disconnected','PokerVision não conectado · manual disponível');
+  }finally{
+    visionTimer=setTimeout(pollPokerVision,500);
+  }
+}
+
+function initPokerVision(){
+  try{
+    const saved=localStorage.getItem('pokercoach.visionEnabled');
+    if(saved!==null) visionEnabled=saved!=='0';
+  }catch(e){}
+  setVisionEnabled(visionEnabled);
+  $('#visionToggle').onclick=()=>{
+    setVisionEnabled(!visionEnabled);
+    if(visionEnabled){
+      visionLastSignature='';
+      pollPokerVision();
+    }
+  };
+  pollPokerVision();
+}
+
 function readiness(){
   const f=$('#reviewForm').elements;
   if(!f.card1.value||!f.card2.value)
@@ -484,3 +610,4 @@ $('#sessionForm').played_at.value=new Date().toISOString().slice(0,10);
 ['card1','card2',...boardFields].forEach(renderCardSlot);
 updateStreet();
 initTable();
+initPokerVision();
