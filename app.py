@@ -52,7 +52,7 @@ def init_db() -> None:
 def analyze(payload: dict) -> dict:
     result = strategy.decide(payload)
     result["input"] = payload
-    if payload.get("record_review") is True:
+    if payload.get("record_review", True) is True:
         with sqlite3.connect(DB_PATH) as db:
             db.execute(
                 "INSERT INTO reviews(created_at,mode,position,hand,stack_bb,recommendation,details) VALUES(?,?,?,?,?,?,?)",
