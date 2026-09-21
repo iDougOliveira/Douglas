@@ -353,7 +353,7 @@ function selectCard(card){
   scheduleAnalysis();
 }
 
-$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
+$$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
 $('#closePicker').onclick=()=>$('#cardPicker').hidden=true;
 $('#cardPicker').onclick=e=>{if(e.target.id==='cardPicker') e.currentTarget.hidden=true};
 
