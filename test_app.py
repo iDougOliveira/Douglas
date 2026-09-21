@@ -90,3 +90,26 @@ class PokerCoachTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class VisionRelayTests(unittest.TestCase):
+    def test_vision_payload_validation(self):
+        state = app.normalize_vision_payload({
+            "version": "0.3.1",
+            "running": True,
+            "confirmed": True,
+            "hand": ["JS", "9C"],
+            "board": ["2D", "8H", "2S"],
+            "street": "FLOP",
+        })
+        self.assertEqual(state["hand"], ["JS", "9C"])
+        self.assertEqual(state["board"], ["2D", "8H", "2S"])
+        self.assertEqual(state["street"], "FLOP")
+
+    def test_vision_payload_rejects_duplicate_cards(self):
+        with self.assertRaises(ValueError):
+            app.normalize_vision_payload({
+                "hand": ["JS", "9C"],
+                "board": ["JS", "8H", "2S"],
+                "street": "FLOP",
+            })
