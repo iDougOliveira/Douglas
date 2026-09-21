@@ -105,13 +105,15 @@ class StrategyTest(unittest.TestCase):
 
     def test_turn_and_river_require_board(self):
         r = review(
-            street="turn", flop1="Ah", flop2="7d", flop3="2c", turn="Ks",
+            card1="As", card2="Qh", street="turn",
+            flop1="Ad", flop2="7d", flop3="2c", turn="Ks",
             pot_bb=10, call_bb=0
         )
         self.assertIn(r["action"], {"BET", "CHECK"})
 
         r = review(
-            street="river", flop1="Ah", flop2="7d", flop3="2c", turn="Ks", river="3h",
+            card1="As", card2="Qh", street="river",
+            flop1="Ad", flop2="7d", flop3="2c", turn="Ks", river="3h",
             pot_bb=12, call_bb=0
         )
         self.assertIn(r["action"], {"BET", "CHECK"})
