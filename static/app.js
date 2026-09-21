@@ -21,7 +21,7 @@ async function login(){
   }catch(e){ $('#loginMsg').textContent=e.message; }
 }
 
-$$$('.tab').forEach(b=>b.onclick=()=>{
+$$('.tab').forEach(b=>b.onclick=()=>{
   $$('.tab,.panel').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   $('#'+b.dataset.tab).classList.add('active');
@@ -149,8 +149,8 @@ async function initTable(){
   }
 }
 
-$$$('.choice').forEach(b=>b.onclick=()=>{
-  $$$(`.choice[data-field="${b.dataset.field}"]`).forEach(x=>x.classList.remove('active'));
+$$('.choice').forEach(b=>b.onclick=()=>{
+  $$(`.choice[data-field="${b.dataset.field}"]`).forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   $('#reviewForm').elements[b.dataset.field].value=b.dataset.value;
   invalidateReview();
@@ -168,7 +168,7 @@ $$('.action-choice').forEach(b=>b.onclick=()=>{
 });
 
 $$('.post-action').forEach(b=>b.onclick=()=>{
-  $('.post-action').forEach(x=>x.classList.remove('active'));
+  $$('.post-action').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   $('#reviewForm').elements.post_action.value=b.dataset.value;
   invalidateReview();
@@ -176,11 +176,11 @@ $$('.post-action').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$$('.quick-value').forEach(b=>b.onclick=()=>{
+$$('.quick-value').forEach(b=>b.onclick=()=>{
   const input=$('#reviewForm').elements[b.dataset.target];
   if(!input) return;
   input.value=b.dataset.value;
-  $$$(`.quick-value[data-target="${b.dataset.target}"]`).forEach(x=>x.classList.remove('active'));
+  $$(`.quick-value[data-target="${b.dataset.target}"]`).forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   invalidateReview();
   syncContext();
@@ -368,7 +368,7 @@ function selectCard(card){
   scheduleAnalysis();
 }
 
-$$$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
+$$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
 $('#closePicker').onclick=()=>$('#cardPicker').hidden=true;
 $('#cardPicker').onclick=e=>{if(e.target.id==='cardPicker') e.currentTarget.hidden=true};
 
