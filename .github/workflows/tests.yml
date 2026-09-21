@@ -35,5 +35,19 @@ jobs:
           PY
       - name: JavaScript syntax
         run: node --check static/app.js
+      - name: JavaScript selector smoke
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          s = Path("static/app.js").read_text()
+          bad = [
+              "$('.post-action').forEach",
+              "$('.quick-value').forEach",
+              "$(`.quick-value[data-target=",
+          ]
+          for pattern in bad:
+              assert pattern not in s, f"Single-element selector used with forEach: {pattern}"
+          print("Selector smoke OK")
+          PY
       - name: Shell syntax
         run: bash -n bootstrap_github.sh auto_update.sh update.sh install.sh
