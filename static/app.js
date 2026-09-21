@@ -167,7 +167,7 @@ $$('.action-choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.post-action').forEach(b=>b.onclick=()=>{
+$$('.post-action').forEach(b=>b.onclick=()=>{
   $('.post-action').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   $('#reviewForm').elements.post_action.value=b.dataset.value;
@@ -176,11 +176,11 @@ $('.post-action').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.quick-value').forEach(b=>b.onclick=()=>{
+$$('.quick-value').forEach(b=>b.onclick=()=>{
   const input=$('#reviewForm').elements[b.dataset.target];
   if(!input) return;
   input.value=b.dataset.value;
-  $(`.quick-value[data-target="${b.dataset.target}"]`).forEach(x=>x.classList.remove('active'));
+  $$(`.quick-value[data-target="${b.dataset.target}"]`).forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   invalidateReview();
   syncContext();
