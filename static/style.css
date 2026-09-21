@@ -100,3 +100,84 @@ button:disabled{cursor:wait;opacity:.6}
 select[name="opener_position"].position-selected{color:var(--pos-color);border-color:var(--pos-color);font-weight:800;box-shadow:0 0 0 1px color-mix(in srgb,var(--pos-color) 30%,transparent)}
 select[name="opener_position"] option{background:#0d1e18}
 .position-tag{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid color-mix(in srgb,var(--pos-color) 55%,var(--line));border-radius:999px;color:var(--pos-color);background:color-mix(in srgb,var(--pos-color) 10%,#091a14);font-weight:900;box-shadow:0 0 8px color-mix(in srgb,var(--pos-color) 20%,transparent)}
+
+
+/* V3.2.4 — mesa horizontal com distribuição fixa estilo sala de poker */
+.poker-table{
+  width:min(100%,680px);
+  aspect-ratio:1.62/1;
+  margin:18px auto 10px;
+}
+.poker-table .felt{
+  inset:13% 9% 15%;
+  border-radius:48% / 42%;
+  background:
+    radial-gradient(ellipse at 50% 45%,#137349 0%,#0d5e3b 50%,#08452d 100%);
+  border:9px solid #6f4a29;
+  box-shadow:
+    0 0 0 4px #2c2017,
+    0 0 0 6px #a16d38,
+    inset 0 0 34px #0007,
+    0 15px 30px #0008;
+}
+.poker-table .table-logo{
+  font-size:40px;
+  line-height:.82;
+  opacity:.8;
+}
+.poker-table .table-logo small{font-size:12px}
+.poker-table .community-board{
+  top:51%;
+  gap:5px;
+}
+.poker-table .seat{
+  transform:translate(-50%,-50%);
+  min-width:78px;
+  min-height:48px;
+  padding:6px 9px;
+  border-radius:8px;
+  background:
+    linear-gradient(180deg,
+      color-mix(in srgb,var(--pos-color,#9bb5aa) 12%,#20272c),
+      color-mix(in srgb,var(--pos-color,#9bb5aa) 7%,#0c1412));
+  box-shadow:
+    inset 0 1px 0 #ffffff18,
+    0 0 0 1px color-mix(in srgb,var(--pos-color,#9bb5aa) 32%,transparent),
+    0 7px 16px #0009;
+}
+.poker-table .seat .avatar{
+  font-size:9px;
+  line-height:10px;
+  opacity:.72;
+}
+.poker-table .seat b{
+  font-size:13px;
+  line-height:15px;
+}
+.poker-table .seat.hero{
+  min-width:92px;
+  min-height:54px;
+  z-index:4;
+}
+.poker-table .seat.dealer i{
+  position:absolute;
+  right:-10px;
+  top:50%;
+  transform:translateY(-50%);
+  width:22px;
+  height:22px;
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  border-radius:50%;
+  font-size:11px;
+  font-style:normal;
+  font-weight:900;
+}
+@media(max-width:700px){
+  .poker-table{width:100%;aspect-ratio:1.45/1}
+  .poker-table .seat{min-width:66px;min-height:43px;padding:5px 7px}
+  .poker-table .seat.hero{min-width:78px}
+  .poker-table .seat b{font-size:11px}
+  .poker-table .seat .avatar{font-size:8px}
+}
