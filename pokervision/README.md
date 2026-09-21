@@ -2,9 +2,9 @@
 
 Aplicativo Windows de captura por coordenadas para o PokerCoach.
 
-## V0.2.0
+## V0.2.1
 
-A V0.2 acrescenta reconhecimento visual treinado com amostras de replay fornecidas pelo usuário:
+A V0.2.1 torna o reconhecimento tolerante à margem do retângulo selecionado:
 
 - reconhece valor e naipe das duas cartas da mão;
 - reconhece 0, 3, 4 ou 5 cartas no board;
@@ -42,3 +42,6 @@ Amostras ficam em:
 9. Se aparecer **LEITURA INCERTA**, use **Salvar amostra** para gerar material de ajuste.
 
 Captura por coordenadas lê os pixels visíveis naquela posição da tela. Se outra janela cobrir a região, essa outra janela será capturada.
+
+
+A seleção pode conter margem verde/escura ao redor das cartas. O reconhecedor encontra o corpo branco de cada carta e recorta cada carta internamente antes de comparar valor e naipe.
