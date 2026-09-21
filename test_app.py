@@ -113,3 +113,36 @@ class VisionRelayTests(unittest.TestCase):
                 "board": ["JS", "8H", "2S"],
                 "street": "FLOP",
             })
+
+
+class VisionNumericRelayTests(unittest.TestCase):
+    def test_vision_numeric_fields(self):
+        state = app.normalize_vision_payload({
+            "version": "0.4.0",
+            "running": True,
+            "confirmed": True,
+            "hand": ["AS", "KD"],
+            "board": [],
+            "street": "PRÉ-FLOP",
+            "blinds": {"small": 100, "big": 200},
+            "ante": 25,
+            "hero_stack_chips": 7650,
+            "hero_stack_bb": 38.25,
+            "table_stacks": [4200, 7650, 12000],
+            "effective_stack_bb": 21,
+            "pot_chips": 450,
+            "pot_bb": 2.25,
+        })
+        self.assertEqual(state["blinds"]["big"], 200.0)
+        self.assertEqual(state["hero_stack_bb"], 38.25)
+        self.assertEqual(state["effective_stack_bb"], 21.0)
+        self.assertEqual(state["pot_bb"], 2.25)
+
+    def test_vision_numeric_fields_reject_negative(self):
+        with self.assertRaises(ValueError):
+            app.normalize_vision_payload({
+                "hand": [],
+                "board": [],
+                "street": "AGUARDANDO",
+                "hero_stack_chips": -1,
+            })
