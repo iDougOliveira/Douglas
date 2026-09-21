@@ -44,7 +44,6 @@ let positionOrder={};
 let playerCount=8;
 let dealerSeat=0;
 let activeCardSlot='card1';
-let selectedSuit=null;
 
 const boardFields=['flop1','flop2','flop3','turn','river'];
 const suitData=[
@@ -289,43 +288,38 @@ function renderCardSlot(slot){
   const symbol=suitRow[1];
   btn.className=(isBoard?'board-slot':'card-slot')+
     ` selected ${color}`+(slot==='turn'?' turn-slot':'')+(slot==='river'?' river-slot':'');
-  btn.innerHTML=`<b>${rank}</b><span>${symbol}</span>`;
+  btn.innerHTML=`<b>${displayRank(rank)}</b><span>${symbol}</span>`;
 }
 
-function showSuitStep(){
-  selectedSuit=null;
-  $('#pickerTitle').textContent='1. Escolha o naipe';
-  $('#suitStep').hidden=false;
-  $('#rankStep').hidden=true;
-  const box=$('#suitChoices');
+function displayRank(rank){
+  return rank==='T'?'10':rank;
+}
+
+function renderFastDeck(){
+  const used=new Set(selectedCards(activeCardSlot));
+  const box=$('#fastDeck');
   box.innerHTML='';
   suitData.forEach(([code,symbol,color,name])=>{
-    const b=document.createElement('button');
-    b.type='button';
-    b.className=`suit-choice ${color}`;
-    b.innerHTML=`<span>${symbol}</span><b>${name}</b>`;
-    b.onclick=()=>showRankStep(code,symbol,color,name);
-    box.appendChild(b);
-  });
-}
-
-function showRankStep(code,symbol,color,name){
-  selectedSuit={code,symbol,color,name};
-  $('#pickerTitle').textContent='2. Escolha a carta';
-  $('#suitStep').hidden=true;
-  $('#rankStep').hidden=false;
-  const used=new Set(selectedCards(activeCardSlot));
-  const box=$('#rankChoices');
-  box.innerHTML='';
-  ranks.forEach(rank=>{
-    const card=rank+code;
-    const b=document.createElement('button');
-    b.type='button';
-    b.className=`rank-choice ${color}`;
-    b.disabled=used.has(card);
-    b.innerHTML=`<b>${rank}</b><span>${symbol}</span>`;
-    b.onclick=()=>selectCard(card);
-    box.appendChild(b);
+    const group=document.createElement('section');
+    group.className='fast-deck-suit';
+    const title=document.createElement('div');
+    title.className=`fast-suit-label ${color}`;
+    title.innerHTML=`<span>${symbol}</span><b>${name}</b>`;
+    const cards=document.createElement('div');
+    cards.className='fast-cards';
+    ranks.forEach(rank=>{
+      const card=rank+code;
+      const b=document.createElement('button');
+      b.type='button';
+      b.className=`fast-card ${color}`;
+      b.disabled=used.has(card);
+      b.setAttribute('aria-label',`${displayRank(rank)} de ${name}`);
+      b.innerHTML=`<b>${displayRank(rank)}</b><span>${symbol}</span>`;
+      b.onclick=()=>selectCard(card);
+      cards.appendChild(b);
+    });
+    group.append(title,cards);
+    box.appendChild(group);
   });
 }
 
@@ -333,22 +327,33 @@ function openPicker(slot){
   const btn=$(`[data-slot="${slot}"]`);
   if(btn?.disabled) return;
   activeCardSlot=slot;
+  $('#pickerTitle').textContent='Escolha a carta';
   $('#pickerLabel').textContent=slotLabel(slot);
-  showSuitStep();
+  renderFastDeck();
   $('#cardPicker').hidden=false;
 }
 
 function selectCard(card){
   invalidateReview();
-  $('#reviewForm').elements[activeCardSlot].value=card;
-  renderCardSlot(activeCardSlot);
-  $('#cardPicker').hidden=true;
+  const f=$('#reviewForm').elements;
+  const current=activeCardSlot;
+  f[current].value=card;
+  renderCardSlot(current);
   updateStreet();
+
+  const quickNext={card1:'card2',flop1:'flop2',flop2:'flop3'};
+  const next=quickNext[current];
+  if(next && !f[next].value){
+    activeCardSlot=next;
+    $('#pickerLabel').textContent=slotLabel(next);
+    renderFastDeck();
+  }else{
+    $('#cardPicker').hidden=true;
+  }
   scheduleAnalysis();
 }
 
-$$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
-$('#backToSuit').onclick=showSuitStep;
+$('.card-slot,.board-slot').forEach(b=>b.onclick=()=>openPicker(b.dataset.slot));
 $('#closePicker').onclick=()=>$('#cardPicker').hidden=true;
 $('#cardPicker').onclick=e=>{if(e.target.id==='cardPicker') e.currentTarget.hidden=true};
 
