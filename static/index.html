@@ -2,21 +2,22 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=2">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=2.1.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V2 · VISUAL</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V2.1.0 · 2–10 JOGADORES</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Regras de uso</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
     <form id="reviewForm">
       <div class="quickbar">
         <div class="segmented" aria-label="Formato"><button type="button" class="choice active" data-field="mode" data-value="cash">Cash</button><button type="button" class="choice" data-field="mode" data-value="tournament">Torneio</button></div>
-        <div class="segmented players" aria-label="Jogadores"><span>Jogadores</span><button type="button" class="player-count" data-count="3">3</button><button type="button" class="player-count" data-count="4">4</button><button type="button" class="player-count active" data-count="8">8</button></div>
+        <div class="players"><span>Jogadores na mão</span><div id="playerCounts" class="segmented" role="group" aria-label="Quantidade de jogadores"></div></div>
       </div>
       <input type="hidden" name="mode" value="cash"><input type="hidden" name="position" value="BTN">
+      <input type="hidden" name="player_count" value="8">
       <input type="hidden" name="card1"><input type="hidden" name="card2"><input type="hidden" name="completed_hand" value="true">
 
       <div class="visual-layout">
@@ -25,6 +26,7 @@
           <p class="hint">Você é o jogador destacado embaixo. Clique no assento que está com o botão.</p>
           <div id="pokerTable" class="poker-table"><div class="felt"><div class="table-logo">POKER<br><small>COACH</small></div></div><div id="seats"></div></div>
           <div class="position-readout">Sua posição: <strong id="heroPosition">BTN</strong></div>
+          <p id="tableHint" class="hint" aria-live="polite">Carregando posições…</p>
         </div>
         <div>
           <h2 class="section-title">2. Escolha suas cartas</h2>
@@ -43,7 +45,7 @@
             <label>Equity estimada %<input name="estimated_equity" type="number" min="0" max="100" step="0.1" placeholder="Só pós-flop"></label>
           </div>
           <label class="confirm visual-confirm"><input id="studyConfirm" type="checkbox" required> É uma simulação ou mão já encerrada</label>
-          <button class="primary analyze-btn" type="submit">Analisar jogada</button>
+          <button class="primary analyze-btn" type="submit" disabled>Analisar jogada</button>
         </div>
       </div>
     </form>
@@ -61,8 +63,8 @@
     </form>
     <div id="summary" class="summary"></div>
   </section>
-  <section id="about" class="panel"><div class="card"><h2>Escopo do sistema</h2><p>Ferramenta educacional independente. Não lê telas, não controla mouse, não se conecta a salas e não executa apostas.</p><p>Os ranges são simplificados. No modo torneio, o MVP ainda não calcula ICM; decisões próximas à premiação exigem revisão específica.</p><p>Gestão sugerida: aproximadamente 30–50 buy-ins para cash e 100–200 para torneios, ajustando ao risco e à variância.</p></div></section>
+  <section id="about" class="panel"><div class="card"><h2>Base estratégica e cobertura</h2><p>As mesas de 2 a 10 jogadores têm posições calculadas pelo botão. Isso não significa que todas tenham uma estratégia validada.</p><p>As recomendações antigas para 3, 4 e 8 jogadores ainda usam heurísticas sem validação por solver. Os novos formatos mostram “REVISAR” quando não há tabela própria. Não confunda esse resultado com uma orientação para desistir da mão.</p><h3>Referências pesquisadas</h3><ul><li><a href="https://blog.gtowizard.com/how-stack-sizes-change-your-range/" target="_blank" rel="noopener noreferrer">GTO Wizard: stack e ranges</a> — a profundidade do stack muda as mãos e ações da estratégia.</li><li><a href="https://pokercoaching.com/preflop-charts/" target="_blank" rel="noopener noreferrer">PokerCoaching: tabelas pré-flop</a> — perfis distintos para cash, torneios, posições e stacks.</li><li><a href="https://redchippoker.com/preflop-poker-charts/" target="_blank" rel="noopener noreferrer">Red Chip Poker: cenários e tabelas</a> — abrir um pote e enfrentar um aumento exigem tabelas diferentes.</li><li><a href="https://blog.gtowizard.com/how-to-review-icm-preflop-ranges/" target="_blank" rel="noopener noreferrer">GTO Wizard: ICM</a> — premiação e distribuição de fichas influenciam decisões de torneios.</li></ul><p>Estas referências orientam a revisão do motor; ainda não constituem uma base completa importada e validada. Faltam perfis por posição do agressor, ação anterior, rake/ante e stack. O pós-flop atual não analisa o board.</p><p>Ferramenta independente para simulações e revisão de mãos encerradas. Não lê telas nem executa apostas.</p></div></section>
 </main>
 <div id="cardPicker" class="modal" hidden><div class="modal-card"><div class="modal-head"><div><h2>Escolha a carta</h2><small id="pickerLabel">Carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div><div id="deck" class="deck"></div></div></div>
-<script src="/app.js?v=2"></script>
+<script src="/app.js?v=2.1.0"></script>
 </body></html>

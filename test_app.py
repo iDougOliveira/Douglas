@@ -60,6 +60,32 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(summary["sessions"], 1)
         self.assertEqual(summary["profit"], 3.5)
 
+    def test_table_formats_and_history(self):
+        for count, positions in app.POSITION_ORDER.items():
+            for position in positions:
+                with self.subTest(count=count, position=position):
+                    result = app.analyze({
+                        "completed_hand": True, "player_count": count,
+                        "position": position, "card1": "Ah", "card2": "As",
+                    })
+                    self.assertEqual(result["player_count"], count)
+                    self.assertEqual(result["position"], position)
+                    if count not in {3, 4, 8}:
+                        self.assertEqual(result["action"], "REVISAR")
+        import sqlite3
+        with sqlite3.connect(app.DB_PATH) as db:
+            details = json.loads(db.execute("SELECT details FROM reviews ORDER BY id DESC LIMIT 1").fetchone()[0])
+        self.assertEqual(details["player_count"], 10)
+
+    def test_incompatible_seats_and_counts(self):
+        for count, position in [(2, "SB"), (2, "BTN"), (3, "UTG"), (6, "UTG+1"), (1, "BTN"), (11, "BTN"), (2.5, "BB"), (True, "BB")]:
+            with self.subTest(count=count, position=position), self.assertRaises(ValueError):
+                app.analyze({"completed_hand": True, "player_count": count, "position": position, "card1": "Ah", "card2": "As"})
+
+    def test_unopened_big_blind_is_not_an_open_raise(self):
+        result = app.analyze({"completed_hand": True, "player_count": 8, "position": "BB", "card1": "Ah", "card2": "As"})
+        self.assertEqual(result["action"], "REVISAR")
+
 
 if __name__ == "__main__":
     unittest.main()

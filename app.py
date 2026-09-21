@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import http.cookies
 import json
+import math
 import os
 import secrets
 import sqlite3
@@ -26,7 +27,7 @@ PASSWORD_HASH = os.getenv("POKERCOACH_PASSWORD_HASH", "")
 SESSION_SECRET = os.getenv("POKERCOACH_SESSION_SECRET", secrets.token_hex(32))
 
 RANKS = "23456789TJQKA"
-POSITIONS = ["UTG", "UTG+1", "MP", "HJ", "CO", "BTN", "SB", "BB"]
+POSITION_ORDER = {int(n): positions for n, positions in json.loads((STATIC / "positions.json").read_text()).items()}
 
 # Simplified educational opening ranges. These are not solver/GTO outputs.
 RFI = {
@@ -123,23 +124,40 @@ def analyze(payload: dict) -> dict:
     if payload.get("completed_hand") is not True:
         raise ValueError("Confirme que esta é uma simulação ou mão já encerrada.")
     mode = str(payload.get("mode", "cash"))
+    raw_count = payload.get("player_count", 8)
+    if str(raw_count) not in {str(n) for n in POSITION_ORDER}:
+        raise ValueError("Escolha de 2 a 10 jogadores.")
+    player_count = int(raw_count)
     position = str(payload.get("position", "BTN")).upper()
-    if position not in POSITIONS:
-        raise ValueError("Posição inválida.")
+    # Compatibility with the previous eight-seat UI: MP is now labelled LJ.
+    if player_count == 8 and position == "MP":
+        position = "LJ"
+    if position not in POSITION_ORDER[player_count]:
+        raise ValueError("Esta posição não existe na mesa selecionada.")
     hand = normalize_hand(str(payload.get("card1", "")), str(payload.get("card2", "")))
     stack = float(payload.get("stack_bb", 100))
     pot = max(float(payload.get("pot_bb", 1.5)), 0.01)
     call = max(float(payload.get("call_bb", 0)), 0)
     last_raise = max(float(payload.get("last_raise_bb", 0)), 0)
+    if not all(math.isfinite(x) for x in (stack, pot, call, last_raise)) or stack <= 0:
+        raise ValueError("Informe valores finitos e um stack maior que zero.")
     street = str(payload.get("street", "preflop"))
     situation = str(payload.get("situation", "unopened"))
     equity_raw = payload.get("estimated_equity")
     equity = float(equity_raw) / 100 if equity_raw not in (None, "") else None
     tier = hand_tier(hand)
     notes = []
+    range_position = "MP" if position == "LJ" else position
+    base_range = RFI.get(range_position, "Não disponível")
 
-    if street == "preflop":
-        in_range = hand in expand_range(RFI[position])
+    if player_count not in {3, 4, 8}:
+        action, sizing, base_range = "REVISAR", "Sem tabela validada", "Não disponível"
+        notes.append(f"A mesa de {player_count} jogadores está disponível para configurar a mão. Ainda não há um perfil estratégico validado para este formato; nenhuma tabela de outra mesa foi adaptada automaticamente.")
+    elif street == "preflop" and situation == "unopened" and position == "BB":
+        action, sizing, base_range = "REVISAR", "Confira a ação anterior", "Não se aplica"
+        notes.append("Se todos desistiram antes do big blind, a mão acabou. Se alguém pagou o blind, houve limp; esse cenário ainda não está disponível neste formulário.")
+    elif street == "preflop":
+        in_range = hand in expand_range(base_range)
         if situation == "unopened":
             if in_range:
                 action = "RAISE"
@@ -188,8 +206,10 @@ def analyze(payload: dict) -> dict:
 
     result = {
         "hand": hand, "action": action, "sizing": sizing,
-        "range": RFI[position], "notes": notes,
-        "disclaimer": "Estimativa educacional para simulação/revisão; não é solução GTO nem garantia de lucro."
+        "range": base_range, "notes": notes,
+        "player_count": player_count, "position": position,
+        "strategy_status": "legacy_unvalidated" if action != "REVISAR" else "not_covered",
+        "disclaimer": "Motor antigo: heurísticas simplificadas sem validação por solver. A pesquisa de referências ainda não foi incorporada como base completa de decisões."
     }
     with sqlite3.connect(DB_PATH) as db:
         db.execute(
