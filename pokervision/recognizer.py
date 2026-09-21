@@ -229,80 +229,97 @@ def _detect_card_boxes(
     image_bgr: np.ndarray,
     slot_count: int,
 ) -> list[tuple[int, int, int, int]]:
-    """Detect the visible white card faces anywhere inside the selected ROI.
-
-    This intentionally does not divide the ROI into fixed slots. The user may
-    select a slightly wider/taller area and the cards are still found by their
-    own bright rectangular faces.
-    """
     height, width = image_bgr.shape[:2]
     if height < 20 or width < 20:
         return []
 
-    lower = np.array([165, 165, 165], dtype=np.uint8)
-    upper = np.array([255, 255, 255], dtype=np.uint8)
-    mask = cv2.inRange(image_bgr, lower, upper)
+    white = np.all(image_bgr > 170, axis=2)
+    white_per_column = white.sum(axis=0)
+    max_column = int(white_per_column.max()) if white_per_column.size else 0
 
-    # Close small holes made by rank/suit glyphs while keeping separate cards
-    # separated by their dark border/gap.
-    kernel = np.ones((3, 3), dtype=np.uint8)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel, iterations=1)
+    if max_column < 12:
+        return []
 
-    contours, _ = cv2.findContours(
-        mask,
-        cv2.RETR_EXTERNAL,
-        cv2.CHAIN_APPROX_SIMPLE,
-    )
+    column_threshold = max(5, int(max_column * 0.25))
+    raw_runs = _runs(white_per_column >= column_threshold)
 
-    candidates: list[tuple[int, int, int, int, int]] = []
-    for contour in contours:
-        x, y, card_w, card_h = cv2.boundingRect(contour)
-        area = card_w * card_h
+    estimated_width = max_column * (1.40 if slot_count == 2 else 0.72)
+    max_single_card_span = max(30, min(100, int(estimated_width * 1.25)))
 
-        if card_w < 24 or card_h < 24 or area < 650:
+    merged: list[list[int]] = []
+    for current in raw_runs:
+        if not merged:
+            merged.append(current)
             continue
 
-        aspect = card_w / max(card_h, 1)
-        # Full cards are portrait; hand crops may contain only the upper half.
-        if aspect < 0.35 or aspect > 1.60:
+        previous = merged[-1]
+        gap = current[0] - previous[1] - 1
+        combined_span = current[1] - previous[0] + 1
+        previous_width = previous[1] - previous[0] + 1
+        current_width = current[1] - current[0] + 1
+
+        should_merge = (
+            gap <= 10
+            and combined_span <= max_single_card_span
+            and previous_width < estimated_width * 0.82
+            and (
+                combined_span >= estimated_width * 0.65
+                or current_width < estimated_width * 0.65
+            )
+        )
+
+        if should_merge:
+            previous[1] = current[1]
+        else:
+            merged.append(current)
+
+    minimum_width = max(10, int(estimated_width * 0.28))
+    boxes: list[tuple[int, int, int, int]] = []
+
+    for x0, x1 in merged:
+        card_width = x1 - x0 + 1
+        if card_width < minimum_width:
             continue
 
-        roi = mask[y:y + card_h, x:x + card_w]
-        fill = float(cv2.countNonZero(roi)) / max(area, 1)
-        if fill < 0.38:
+        card_columns = white[:, x0:x1 + 1]
+        white_per_row = card_columns.sum(axis=1)
+        max_row = int(white_per_row.max()) if white_per_row.size else 0
+        if max_row < 6:
             continue
 
-        # Reject huge bright UI/background areas accidentally included.
-        if card_w > width * 0.65 or card_h > height * 0.98:
+        row_threshold = max(4, int(max_row * 0.20))
+        ys = np.where(white_per_row >= row_threshold)[0]
+        if not len(ys):
             continue
 
-        candidates.append((x, y, card_w, card_h, area))
+        y0 = int(ys[0])
+        y1 = int(ys[-1])
+        card_height = y1 - y0 + 1
 
-    # Keep the largest non-overlapping card-like rectangles.
-    candidates.sort(key=lambda item: item[4], reverse=True)
-    chosen: list[tuple[int, int, int, int]] = []
+        if card_height < max(14, int(max_column * 0.55)):
+            continue
 
-    for x, y, card_w, card_h, _area in candidates:
-        x2 = x + card_w
-        y2 = y + card_h
-        duplicate = False
+        boxes.append((x0, y0, card_width, card_height))
 
-        for ax, ay, aw, ah in chosen:
-            ax2 = ax + aw
-            ay2 = ay + ah
-            iw = max(0, min(x2, ax2) - max(x, ax))
-            ih = max(0, min(y2, ay2) - max(y, ay))
-            inter = iw * ih
-            smaller = min(card_w * card_h, aw * ah)
-            if smaller and inter / smaller > 0.55:
-                duplicate = True
-                break
+    if boxes:
+        tallest = max(box[3] for box in boxes)
+        boxes = [
+            box
+            for box in boxes
+            if box[3] >= max(14, int(tallest * 0.55))
+        ]
 
-        if not duplicate:
-            chosen.append((x, y, card_w, card_h))
+    if len(boxes) > slot_count:
+        boxes = sorted(
+            sorted(
+                boxes,
+                key=lambda box: box[2] * box[3],
+                reverse=True,
+            )[:slot_count],
+            key=lambda box: box[0],
+        )
 
-    chosen.sort(key=lambda box: box[0])
-    return chosen[:slot_count]
+    return boxes
 
 
 def recognize_region(image: Image.Image, slot_count: int) -> RegionReading:
