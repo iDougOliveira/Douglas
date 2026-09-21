@@ -16,3 +16,5 @@ jobs:
         run: python -m unittest -v
       - name: JavaScript syntax
         run: node --check static/app.js
+      - name: Shell syntax
+        run: bash -n bootstrap_github.sh auto_update.sh update.sh install.sh
