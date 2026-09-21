@@ -75,3 +75,28 @@ button:disabled{cursor:wait;opacity:.6}
 .quick-value{padding:6px 9px;min-width:38px;font-size:12px;border-radius:8px;background:#132c23}
 .quick-value:hover,.quick-value.active{border-color:var(--green);color:var(--green)}
 @media(max-width:480px){.vision-bar{align-items:flex-start;flex-wrap:wrap}.vision-bar #visionStatus{flex-basis:calc(100% - 22px)}#visionToggle{margin-left:19px}}
+
+
+/* V3.2.3 — identidade visual por posição */
+.seat{
+  border-color:var(--pos-color,var(--line));
+  background:color-mix(in srgb,var(--pos-color,#9bb5aa) 14%,#10241c);
+  box-shadow:0 0 0 1px color-mix(in srgb,var(--pos-color,#9bb5aa) 30%,transparent),0 5px 14px #0007;
+}
+.seat b{color:var(--pos-color,#fff);text-shadow:0 0 9px color-mix(in srgb,var(--pos-color,#fff) 35%,transparent)}
+.seat.hero{
+  border-color:var(--pos-color,var(--green));
+  box-shadow:0 0 0 2px color-mix(in srgb,var(--pos-color,var(--green)) 45%,transparent),0 0 18px color-mix(in srgb,var(--pos-color,var(--green)) 28%,transparent);
+}
+.seat.dealer i{background:var(--pos-color,var(--gold));color:#08120e;border-color:#fff}
+.position-readout{
+  border-color:color-mix(in srgb,var(--pos-color,var(--line)) 60%,var(--line));
+  background:color-mix(in srgb,var(--pos-color,#9bb5aa) 8%,#091a14);
+}
+#heroPosition{color:var(--pos-color,var(--green));text-shadow:0 0 10px color-mix(in srgb,var(--pos-color,var(--green)) 35%,transparent)}
+.position-legend{display:flex;flex-wrap:wrap;justify-content:center;gap:6px 9px;margin:8px 0 2px}
+.position-legend-item{display:inline-flex;align-items:center;gap:5px;padding:4px 7px;border:1px solid color-mix(in srgb,var(--pos-color) 48%,var(--line));border-radius:999px;color:var(--pos-color);background:color-mix(in srgb,var(--pos-color) 8%,#091a14);font-size:11px;font-weight:800}
+.position-legend-item i{width:7px;height:7px;border-radius:50%;background:var(--pos-color);box-shadow:0 0 7px color-mix(in srgb,var(--pos-color) 55%,transparent)}
+select[name="opener_position"].position-selected{color:var(--pos-color);border-color:var(--pos-color);font-weight:800;box-shadow:0 0 0 1px color-mix(in srgb,var(--pos-color) 30%,transparent)}
+select[name="opener_position"] option{background:#0d1e18}
+.position-tag{display:inline-flex;align-items:center;padding:2px 7px;border:1px solid color-mix(in srgb,var(--pos-color) 55%,var(--line));border-radius:999px;color:var(--pos-color);background:color-mix(in srgb,var(--pos-color) 10%,#091a14);font-weight:900;box-shadow:0 0 8px color-mix(in srgb,var(--pos-color) 20%,transparent)}
