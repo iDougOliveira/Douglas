@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.0.0"
+ENGINE_VERSION = "3.1.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -12,6 +12,9 @@ SOURCES = {
     "odds": {"title": "Upswing — cálculo de pot odds", "url": "https://upswingpoker.com/pot-odds-step-by-step/"},
     "rules": {"title": "Poker TDA — regras de raises", "url": "https://www.pokertda.com/view-poker-tda-rules/"},
     "stacks": {"title": "GTO Wizard — influência do stack", "url": "https://blog.gtowizard.com/how-stack-sizes-change-your-range/"},
+    "texture": {"title": "Upswing — fundamentos de textura de flop", "url": "https://upswingpoker.com/board-texture-tips/"},
+    "cbet": {"title": "PokerCoaching — fundamentos pós-flop e c-bet", "url": "https://pokercoaching.com/blog/gto-postflop-basics/"},
+    "defense": {"title": "PokerCoaching — 3-bet e defesa pré-flop", "url": "https://pokercoaching.com/preflop-charts/"},
 }
 
 # Factual hand-set data from the public text, not copied chart artwork or solver frequencies.
@@ -112,9 +115,11 @@ def context(data):
     mode = data.get("mode", "cash")
     if mode not in {"cash", "tournament"}:
         raise ValueError("Formato inválido.")
+    card1, card2 = str(data.get("card1", "")).strip().upper(), str(data.get("card2", "")).strip().upper()
+    hand = normalize_hand(card1, card2)
     return {"players": n, "position": pos, "mode": mode,
             "stack": number(data, "stack_bb", 100, 0.1),
-            "hand": normalize_hand(data.get("card1", ""), data.get("card2", "")),
+            "hand": hand, "hole": [card1, card2],
             "ante": number(data, "ante_bb", 0)}
 
 def preflop_order(n):
@@ -157,12 +162,29 @@ def decide(data):
     if c["mode"] == "cash" and c["ante"]:
         r["notes"].append("As referências cash implementadas não são ajustadas para ante ou straddle.")
         return r
-    profile_id, profile = next(((k,p) for k,p in PROFILES.items() if (p["mode"],p["players"],p["stack"]) == (c["mode"],c["players"],c["stack"])), (None,None))
-    if not profile:
-        r["notes"].append("Sem tabela para esta combinação. Perfis: cash 6/8 jogadores a 100 BB; torneio 9 jogadores a 75/100 BB; torneio 8 jogadores a 10 BB. Não há interpolação entre stacks ou mesas.")
-        source(r,"stacks")
+    if c["mode"] == "cash":
+        profile_id = "cash6_100" if c["players"] <= 6 else "cash8_reference"
+    else:
+        ids = ["mtt8_10", "mtt9_75", "mtt9_100"]
+        profile_id = min(ids, key=lambda k: (abs(PROFILES[k]["stack"]-c["stack"]), abs(PROFILES[k]["players"]-c["players"])))
+    profile = PROFILES[profile_id]
+    range_pos = c["position"]
+    aliases = {"BTN/SB": "SB", "UTG+2": "UTG+1", "MP": "UTG+2"}
+    if range_pos not in profile["ranges"]:
+        range_pos = aliases.get(range_pos, range_pos)
+    if range_pos not in profile["ranges"] and range_pos == "UTG+2":
+        range_pos = "UTG+1"
+    if range_pos not in profile["ranges"]:
+        r["notes"].append("A posição atual não possui referência compatível no estudo carregado.")
         return r
-    r.update(profile=profile["name"], profile_id=profile_id, strategy_status="published_summary", range=profile["ranges"][c["position"]])
+    adapted = profile["players"] != c["players"] or profile["stack"] != c["stack"] or range_pos != c["position"]
+    r.update(profile=profile["name"], profile_id=profile_id,
+             strategy_status="adapted_reference" if adapted else "published_summary",
+             range=profile["ranges"][range_pos], study_position=range_pos,
+             study_stack_bb=profile["stack"], study_players=profile["players"])
+    if adapted:
+        r["notes"].append(f"Correspondência automática: mesa {c['players']}-max / {c['stack']:g} BB foi comparada ao estudo {profile['players']}-max / {profile['stack']:g} BB usando a posição {range_pos}.")
+        source(r, "stacks")
     r["range_hands"] = sorted(expand_range(r["range"]))
     source(r, "charts")
     r["notes"].append("Consulta determinística ao resumo escrito da fonte. As imagens têm ações mistas; não foram importadas frequências nem porcentagens GTO.")
@@ -176,15 +198,17 @@ def decide(data):
     if c["hand"] not in r["range_hands"]:
         r.update(action="FOLD", sizing="Fora do resumo de abertura")
         r["notes"].append("FOLD é a classificação deste resumo simplificado; não prova que um solver descarte a mão em todas as frequências.")
-    elif c["position"] == "SB" or (profile_id == "mtt8_10" and c["position"] not in {"HJ","CO"}):
-        r.update(action="MISTA", sizing="A fonte não separa as ações por mão")
-        r["notes"].append("A mão pertence ao conjunto publicado, mas a fonte agrupa raise/limp ou raise/all-in. Não há percentual disponível para escolher uma ação única.")
     elif profile_id == "mtt8_10":
         r.update(action="ALL-IN", sizing=f"Até {c['stack']:g} BB no total", raise_to_bb=c["stack"], additional_bb=c["stack"])
+        r["notes"].append("Para manter uma ação única no modo de estudo de 10 BB, o app usa o ramo all-in para as mãos incluídas no conjunto publicado.")
     else:
-        size = profile["open_bb"]
-        r.update(action="RAISE", sizing=f"Até {size:g} BB no total" if size else "Tamanho não informado no resumo", raise_to_bb=size, additional_bb=size)
-        r["notes"].append(f"{c['hand']} está no conjunto de abertura publicado para {c['position']}.")
+        size = profile["open_bb"] or 2.5
+        r.update(action="RAISE", sizing=f"Até {size:g} BB no total", raise_to_bb=size, additional_bb=size)
+        if profile["open_bb"] is None:
+            r["notes"].append("O resumo não informa sizing para este perfil; o app usa 2,5 BB como convenção explícita de estudo.")
+        if c["position"] == "SB":
+            r["notes"].append("A fonte mistura limp e raise no SB; para uma resposta única, o modo simplificado escolhe o ramo RAISE.")
+        r["notes"].append(f"{c['hand']} está no conjunto de abertura publicado para {range_pos}.")
     return r
 
 def threebet(data, c, r):
@@ -222,23 +246,155 @@ def threebet(data, c, r):
     r["notes"].extend([f"Diretriz de valor, não solução exata: {c['hand']} pertence ao núcleo QQ+/AK descrito pela fonte.", f"Contra {villain}, você está {'em posição' if ip else 'fora de posição'} no pós-flop: {multiple} × {opening:g} = {size:g} BB no total.", f"Você já colocou {invested:g} BB; acrescentaria {size-invested:g} BB. Mínimo legal: {r['min_raise_to_bb']:g} BB.", "A fonte sugere cerca de 3× em posição e 4–4,5× fora. Usamos 4× como simplificação explícita; não há otimização por rake ou adversário."])
     return r
 
+def _card(card):
+    card = str(card or "").strip().upper()
+    if len(card) != 2 or card[0] not in RANKS or card[1] not in "CDHS":
+        raise ValueError("Carta do board inválida.")
+    return card
+
+def _board(data, street, hole):
+    keys = ["flop1", "flop2", "flop3", "turn", "river"]
+    expected = {"flop": 3, "turn": 4, "river": 5, "postflop": 3}.get(street, 0)
+    cards = [_card(data.get(k)) for k in keys if data.get(k)]
+    if street == "postflop":
+        if len(cards) not in {3,4,5}:
+            raise ValueError("Complete o flop para analisar o pós-flop.")
+    elif len(cards) != expected:
+        raise ValueError(f"Para {street}, informe {expected} cartas comunitárias.")
+    all_cards = list(hole) + cards
+    if len(set(all_cards)) != len(all_cards):
+        raise ValueError("Uma mesma carta não pode aparecer duas vezes.")
+    return cards
+
+def _straight_high(ranks):
+    vals = sorted(set(RANKS.index(r)+2 for r in ranks), reverse=True)
+    if 14 in vals:
+        vals.append(1)
+    for high in range(14,4,-1):
+        if all(v in vals for v in range(high-4, high+1)):
+            return high
+    return None
+
+def _hand_info(hole, board):
+    from collections import Counter
+    cards = hole + board
+    rc = Counter(c[0] for c in cards)
+    sc = Counter(c[1] for c in cards)
+    flush_suit = next((s for s,n in sc.items() if n >= 5), None)
+    straight = _straight_high([c[0] for c in cards])
+    groups = sorted(rc.values(), reverse=True)
+    if 4 in groups:
+        category, label, score = "quads", "quadra", 7
+    elif 3 in groups and groups.count(2) + max(groups.count(3)-1,0) >= 1:
+        category, label, score = "full_house", "full house", 6
+    elif flush_suit:
+        category, label, score = "flush", "flush", 5
+    elif straight:
+        category, label, score = "straight", "sequência", 4
+    elif 3 in groups:
+        category, label, score = "trips", "trinca", 3
+    elif groups.count(2) >= 2:
+        category, label, score = "two_pair", "dois pares", 2
+    elif 2 in groups:
+        category, label, score = "pair", "um par", 1
+    else:
+        category, label, score = "high_card", "carta alta", 0
+
+    board_vals = [RANKS.index(c[0]) for c in board]
+    top_rank = board[max(range(len(board)), key=lambda i: board_vals[i])][0] if board else None
+    pocket = hole[0][0] == hole[1][0]
+    overpair = bool(board and pocket and RANKS.index(hole[0][0]) > max(board_vals))
+    top_pair = any(h[0] == top_rank for h in hole) and rc[top_rank] >= 2 if top_rank else False
+
+    max_suit = max(sc.values()) if sc else 0
+    flush_draw = len(board) < 5 and max_suit == 4 and any(sc[h[1]] == 4 for h in hole)
+
+    uniq = set(RANKS.index(c[0])+2 for c in cards)
+    if 14 in uniq:
+        uniq.add(1)
+    straight_out_values = set()
+    for low in range(1,11):
+        seq=set(range(low,low+5))
+        miss=seq-uniq
+        if len(miss)==1:
+            straight_out_values |= miss
+    straight_draw = len(board) < 5 and bool(straight_out_values) and score < 4
+    outs = (9 if flush_draw else 0) + (8 if straight_draw else 0)
+    if flush_draw and straight_draw:
+        outs = min(15, outs)
+
+    return {"category": category, "label": label, "score": score, "top_pair": top_pair,
+            "overpair": overpair, "flush_draw": flush_draw, "straight_draw": straight_draw, "outs": outs}
+
+def _texture(board):
+    from collections import Counter
+    ranks=[RANKS.index(c[0])+2 for c in board[:3]]
+    suits=Counter(c[1] for c in board[:3])
+    rc=Counter(c[0] for c in board[:3])
+    paired=any(v>1 for v in rc.values())
+    monotone=max(suits.values(), default=0)==3
+    two_tone=max(suits.values(), default=0)==2
+    span=max(ranks)-min(ranks) if ranks else 0
+    connected=span <= 4 and len(set(ranks)) == 3
+    wet = monotone or two_tone or connected
+    parts=[]
+    if paired: parts.append("pareado")
+    if monotone: parts.append("monotone")
+    elif two_tone: parts.append("duas cores")
+    else: parts.append("rainbow")
+    parts.append("conectado" if connected else "desconectado")
+    return {"wet": wet, "label": " · ".join(parts)}
+
 def postflop(data,c,r):
-    pot = number(data,"pot_bb",0,0.01)
-    call = number(data,"call_bb",0)
-    source(r,"odds")
-    r.update(profile="Pot odds e EV de call no encerramento da ação", strategy_status="math_only", pot_odds_pct=100*call/(pot+call))
-    r["notes"].append(f"Pote antes do seu call, já incluindo a aposta adversária: {pot:g} BB. Call: {call:g} BB. Equity de equilíbrio: {r['pot_odds_pct']:.2f}% (sem rake).")
-    remaining = number(data,"remaining_bb",c["stack"])
-    if call > pot or call > remaining:
-        raise ValueError("Confira pote e call. Side pots e calls acima do stack disponível não são suportados.")
-    if c["mode"] != "cash" or call == 0 or data.get("closes_action") is not True or number(data,"active_opponents",1,1,9) != 1:
-        r["notes"].append("A decisão por EV exige cash, um adversário, aposta a pagar e confirmação de que o call encerra todas as apostas (river ou all-in sem side pot). Equity isolada não define bet/check.")
+    street = data.get("street", "flop")
+    board = _board(data, street, c["hole"])
+    info = _hand_info(c["hole"], board)
+    texture = _texture(board)
+    source(r,"odds","texture","cbet")
+    r.update(board=board, board_text=" ".join(board), hand_class=info["label"],
+             board_texture=texture["label"], strategy_status="study_heuristic",
+             profile="Pós-flop automático · força da mão + textura + pot odds")
+    r["notes"].append(f"Board: {' '.join(board)}. Mão atual: {info['label']}. Textura do flop: {texture['label']}.")
+    r["notes"].append("A ação pós-flop é uma heurística determinística baseada em força feita, draws, textura e pot odds; não substitui um solver de ranges.")
+
+    pot = number(data,"pot_bb",0,0)
+    call = number(data,"call_bb",0,0)
+    if pot <= 0:
+        raise ValueError("Informe o pote atual para analisar o pós-flop.")
+    opponents = int(number(data,"active_opponents",1,1,9))
+    if opponents > 1:
+        r["notes"].append("Pote multiway: o modo de estudo usa uma linha mais conservadora.")
+
+    if call > 0:
+        pot_odds = 100*call/(pot+call)
+        r["pot_odds_pct"] = pot_odds
+        if info["score"] >= 2:
+            action = "RAISE" if info["score"] >= 3 or texture["wet"] else "CALL"
+            r.update(action=action, sizing="Aumentar por valor" if action=="RAISE" else f"Pagar {call:g} BB")
+        elif info["overpair"] or info["top_pair"]:
+            r.update(action="CALL", sizing=f"Pagar {call:g} BB")
+        elif info["outs"]:
+            draw_equity = min(60, info["outs"] * (4 if len(board)==3 else 2))
+            r["estimated_draw_equity_pct"] = draw_equity
+            r.update(action="CALL" if draw_equity >= pot_odds else "FOLD",
+                     sizing=f"Pagar {call:g} BB" if draw_equity >= pot_odds else "Pot odds insuficientes para o draw")
+            r["notes"].append(f"Estimativa didática pela regra 4/2: ~{draw_equity:.1f}% para {info['outs']} outs versus {pot_odds:.1f}% de pot odds.")
+        else:
+            r.update(action="FOLD", sizing="Sem força/draw suficiente para pagar")
         return r
-    if data.get("estimated_equity") in (None, ""):
-        r["notes"].append("Informe a equity contra o range adversário. Este cálculo não estima equity a partir das suas duas cartas.")
-        return r
-    equity = number(data,"estimated_equity",0,0,100)/100
-    ev = equity*(pot+call)-call
-    r.update(action="INDIFERENTE" if math.isclose(ev,0,abs_tol=1e-9) else "CALL" if ev>0 else "FOLD", sizing=f"Pagar {call:g} BB" if ev>0 else "EV igual a zero" if math.isclose(ev,0,abs_tol=1e-9) else "EV do call negativo", ev_call_bb=ev)
-    r["notes"].append(f"EV do call = equity × (pote + call) − call = {ev:.3f} BB. Resultado condicionado à equity informada, à ausência de rake adicional e ao encerramento da ação.")
+
+    # Ninguém apostou antes da decisão do herói.
+    if info["score"] >= 2:
+        frac = .67 if texture["wet"] else .50
+        r.update(action="BET", sizing=f"Apostar ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+    elif info["overpair"] or info["top_pair"]:
+        frac = .50 if texture["wet"] else .33
+        r.update(action="BET", sizing=f"Apostar ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+    elif info["outs"] >= 8:
+        frac = .50 if texture["wet"] else .33
+        r.update(action="BET", sizing=f"Semi-blefe ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+    elif data.get("situation","unopened") == "unopened" and not texture["wet"] and opponents == 1:
+        r.update(action="BET", sizing="C-bet pequena ~33% do pote", bet_bb=round(pot*.33,2))
+    else:
+        r.update(action="CHECK", sizing="Passar a ação")
     return r
