@@ -7,7 +7,7 @@ BRANCH="${POKERCOACH_BRANCH:-main}"
 LOCK_FILE="/run/pokercoach-update.lock"
 
 if [ "$(id -u)" -ne 0 ]; then
-  exec sudo POKERCOACH_USER="$APP_USER" POKERCOACH_BRANCH="$BRANCH" "$0"
+  exec sudo env POKERCOACH_USER="$APP_USER" POKERCOACH_BRANCH="$BRANCH" bash "$APP_DIR/auto_update.sh"
 fi
 
 exec 9>"$LOCK_FILE"
