@@ -51,3 +51,12 @@ A seleção pode conter margem verde/escura ao redor das cartas. O reconhecedor 
 - detecção das cartas passa a procurar o retângulo branco da própria carta;
 - a seleção pode ter margem extra ao redor das cartas;
 - não depende mais de dividir a região em posições de largura fixa.
+
+
+## V0.3.0 — integração com PokerCoach
+
+- publica somente leituras confirmadas em `http://127.0.0.1:8766/state`;
+- o navegador do PokerCoach no mesmo Windows consome esse estado automaticamente;
+- mão e board só são enviados depois de 3 capturas estáveis;
+- nenhuma ação é enviada ao software de poker;
+- o bridge aceita apenas origens locais/privadas e permanece restrito ao loopback do Windows.
