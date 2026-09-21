@@ -47,7 +47,7 @@ let activeCardSlot='card1';
 let visionEnabled=true;
 let visionTimer=null;
 let visionLastSignature='';
-const VISION_URL='http://127.0.0.1:8766/state';
+const VISION_URL='/api/vision/state';
 
 const boardFields=['flop1','flop2','flop3','turn','river'];
 const suitData=[
@@ -449,27 +449,29 @@ async function pollPokerVision(){
     const timeout=setTimeout(()=>controller.abort(),700);
     const response=await fetch(VISION_URL,{
       method:'GET',
-      mode:'cors',
       cache:'no-store',
+      credentials:'same-origin',
       signal:controller.signal
     });
     clearTimeout(timeout);
     if(!response.ok) throw new Error('bridge indisponível');
     const state=await response.json();
 
-    if(!visionEnabled){
-      setVisionBar('paused','PokerVision encontrado · automático pausado');
+    if(!state.connected){
+      setVisionBar('disconnected','PokerVision ainda não enviou dados ao Beelink');
+    }else if(!visionEnabled){
+      setVisionBar('paused','PokerVision conectado · automático pausado');
     }else if(!state.running){
-      setVisionBar('waiting','PokerVision conectado · clique em Iniciar monitoramento');
+      setVisionBar('waiting','PokerVision conectado ao Beelink · clique em Iniciar monitoramento');
     }else if(!state.confirmed){
       setVisionBar('waiting','PokerVision conectado · confirmando leitura…');
     }else{
       const hand=(state.hand||[]).length?state.hand.join(' '):'sem mão';
-      setVisionBar('connected',`PokerVision OK · ${state.street||''} · ${hand}`);
+      setVisionBar('connected',`PokerVision → Beelink OK · ${state.street||''} · ${hand}`);
       applyVisionState(state);
     }
   }catch(e){
-    if(visionEnabled) setVisionBar('disconnected','PokerVision não conectado · manual disponível');
+    if(visionEnabled) setVisionBar('disconnected','Sem sincronização com PokerVision · manual disponível');
   }finally{
     visionTimer=setTimeout(pollPokerVision,500);
   }
