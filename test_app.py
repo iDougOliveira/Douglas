@@ -53,7 +53,7 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(result["action"], "RAISE")
         self.assertEqual(result["hand"], "AKo")
         self.assertEqual(result["raise_to_bb"], 2.5)
-        self.assertEqual(result["engine_version"], "3.0.0")
+        self.assertEqual(result["engine_version"], "3.1.0")
         self.assertTrue(self.call("/api/session", {
             "played_at": "2026-09-21", "mode": "cash", "stakes": "NL10",
             "buy_in": 10, "cash_out": 13.5, "notes": "teste",
@@ -72,8 +72,7 @@ class PokerCoachTest(unittest.TestCase):
                     })
                     self.assertEqual(result["player_count"], count)
                     self.assertEqual(result["position"], position)
-                    if count not in {6, 8} and position != "BB":
-                        self.assertEqual(result["action"], "REVISAR")
+                    self.assertIn(result["action"], {"RAISE", "FOLD", "SEM AÇÃO"})
         import sqlite3
         with sqlite3.connect(app.DB_PATH) as db:
             details = json.loads(db.execute("SELECT details FROM reviews ORDER BY id DESC LIMIT 1").fetchone()[0])
