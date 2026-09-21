@@ -45,13 +45,15 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(self.call("/api/health")["status"], "ok")
         self.assertTrue(self.call("/api/login", {"password": "senha-teste"})["ok"])
         result = self.call("/api/analyze", {
-            "completed_hand": True, "mode": "cash", "position": "BTN",
+            "completed_hand": True, "mode": "cash", "position": "BTN", "player_count": 6,
             "card1": "Ah", "card2": "Ks", "stack_bb": 100,
             "pot_bb": 1.5, "call_bb": 0, "last_raise_bb": 0,
             "street": "preflop", "situation": "unopened",
         })
         self.assertEqual(result["action"], "RAISE")
         self.assertEqual(result["hand"], "AKo")
+        self.assertEqual(result["raise_to_bb"], 2.5)
+        self.assertEqual(result["engine_version"], "3.0.0")
         self.assertTrue(self.call("/api/session", {
             "played_at": "2026-09-21", "mode": "cash", "stakes": "NL10",
             "buy_in": 10, "cash_out": 13.5, "notes": "teste",
@@ -70,7 +72,7 @@ class PokerCoachTest(unittest.TestCase):
                     })
                     self.assertEqual(result["player_count"], count)
                     self.assertEqual(result["position"], position)
-                    if count not in {3, 4, 8}:
+                    if count not in {6, 8} and position != "BB":
                         self.assertEqual(result["action"], "REVISAR")
         import sqlite3
         with sqlite3.connect(app.DB_PATH) as db:
@@ -84,7 +86,7 @@ class PokerCoachTest(unittest.TestCase):
 
     def test_unopened_big_blind_is_not_an_open_raise(self):
         result = app.analyze({"completed_hand": True, "player_count": 8, "position": "BB", "card1": "Ah", "card2": "As"})
-        self.assertEqual(result["action"], "REVISAR")
+        self.assertEqual(result["action"], "SEM AÇÃO")
 
 
 if __name__ == "__main__":

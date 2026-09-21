@@ -29,7 +29,7 @@ fi
 echo "Atualizando PokerCoach: ${LOCAL_COMMIT:0:8} -> ${REMOTE_COMMIT:0:8}"
 git_as_user merge --ff-only "origin/$BRANCH"
 
-if ! runuser -u "$APP_USER" -- python3 -m py_compile "$APP_DIR/app.py" "$APP_DIR/make_password.py"; then
+if ! runuser -u "$APP_USER" -- python3 -m py_compile "$APP_DIR/app.py" "$APP_DIR/strategy.py" "$APP_DIR/make_password.py"; then
   echo "Validação Python falhou; restaurando versão anterior."
   git_as_user reset --hard "$LOCAL_COMMIT"
   exit 1
@@ -56,4 +56,3 @@ echo "Health check falhou; executando rollback."
 git_as_user reset --hard "$LOCAL_COMMIT"
 systemctl restart pokercoach.service
 exit 1
-

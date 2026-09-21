@@ -2,7 +2,25 @@
 
 Painel web local para estudo/revisão de mãos e gestão de banca. Funciona no navegador do celular ou computador; não requer instalação nesses dispositivos.
 
-Interface visual: escolha 3, 4 ou 8 jogadores, clique no assento que contém o botão do dealer e a posição do jogador é calculada automaticamente. As duas cartas são selecionadas em um baralho gráfico.
+Interface visual: escolha de 2 a 10 jogadores, clique no assento com o botão e selecione as duas cartas no baralho gráfico. Em heads-up, o botão também é SB.
+
+## Motor 3.0.0
+
+O módulo `strategy.py` substitui integralmente as heurísticas antigas. Cada resultado informa perfil, fonte, motivo e limites; o histórico registra a entrada usada. Não existe LLM nem sorteio de ação.
+
+- Aberturas: resumos escritos da [PokerCoaching](https://pokercoaching.com/preflop-charts/), separados por mesa, posição e stack. Cash 6-max/100 BB; cash 8-max (referência adaptada, limitada pelo app a 100 BB); torneio 9-max/75 ou 100 BB; torneio 8-max/10 BB.
+- Cash 8-max: o texto não especifica stack nem rake. A limitação a 100 BB é uma decisão de implementação, não validação GTO. O tamanho de abertura de 3 BB está na [imagem pública full-ring](https://cdn-pokercoachin.pressidium.com/wp-content/uploads/2026/06/65097636-0-preflop-ranges-for-f.jpg).
+- Não são reproduzidas frequências de solver. A fonte tem diferenças entre listas textuais e imagens de ações mistas; o motor identifica explicitamente a consulta como resumo. Grupos sem ação individual discriminada, como SB, permanecem MISTA.
+- 3-bet: [diretriz Upswing](https://upswingpoker.com/3-bet-strategy-aggressive-preflop/), núcleo QQ+/AK, cash 100 BB sem ante. O app restringe a um open de 2–5 BB sem callers; 3× em posição, 4× fora. Essas são simplificações de especialista, não tabelas completas contra cada posição. Fora do núcleo, não deduz fold.
+- O total do primeiro raise e os blinds determinam o valor a pagar e o mínimo legal; valores inconsistentes geram erro. Nunca se usa o antigo piso fixo de 7,5 BB.
+- Pós-flop: [pot odds](https://upswingpoker.com/pot-odds-step-by-step/). EV(call) = equity × (pote antes do call + call) − call, relativamente ao fold. Ação por EV só em cash, heads-up, com encerramento das apostas, sem side pots/rake adicional e com equity fornecida. Sem estimativa de equity nem análise de board.
+- Torneios exigem confirmação de contexto sem pressão de ICM/bounty. Não há ajuste automático de ante, rake, stacks intermediários, mesas diferentes, limp, squeeze, 3-bet ou 4-bet.
+
+Conceitos conferidos também no [GTO Wizard](https://blog.gtowizard.com/how-stack-sizes-change-your-range/) e nas [regras Poker TDA](https://www.pokertda.com/view-poker-tda-rules/). Discussões do [Two Plus Two](https://forumserver.twoplustwo.com/170/live-no-limit-holdem-cash/how-closely-do-you-follow-preflop-charts-1821061/) foram contexto de pesquisa, não tabelas incorporadas. Consulta: 21/09/2026.
+
+Use “Carregar exemplo de estudo” para explorar perfis; ao revisar uma mão, preserve os dados reais. “REVISAR” indica falta de cobertura, não fold. A banca total é separada do stack efetivo.
+
+Validação local: `python3 -m unittest -v test_app test_strategy` e `node --check static/app.js`. Os testes conferem exemplos de referência, regras de sizing, 169 classes de mãos por posição/perfil e regressão do erro de 7,5 BB. Não são prova de lucratividade ou de equilíbrio GTO.
 
 Código oficial: `https://github.com/iDougOliveira/Douglas`
 

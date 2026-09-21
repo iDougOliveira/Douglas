@@ -12,3 +12,13 @@
 button:disabled{cursor:wait;opacity:.6}
 #about a{color:var(--green)}
 @media(max-width:480px){.poker-table[data-players="9"],.poker-table[data-players="10"]{height:380px}.players .player-count{padding:8px;min-width:34px}.seat b{font-size:11px}}
+[hidden]{display:none!important}
+.study-config{display:grid;grid-template-columns:1.3fr 1fr;gap:12px;margin-bottom:10px}
+#raiseInputs,#tournamentContext{margin-top:12px}
+.range-grid{display:grid;grid-template-columns:repeat(13,minmax(0,1fr));gap:3px;max-width:630px}
+.range-cell{background:#152820;border:1px solid #345144;text-align:center;padding:9px 1px;font-size:12px;border-radius:3px;color:#94a69c}
+.range-cell.included{background:#205940;color:#eafff2}.range-cell.selected-hand{outline:2px solid var(--gold);outline-offset:-2px;font-weight:900;color:var(--gold)}
+.range-details{margin:20px 0}.range-details summary{cursor:pointer;color:var(--green)}
+.range-notation{overflow-wrap:anywhere}.source-links a{color:var(--green)}
+.result li{margin:9px 0;line-height:1.5}.decision.revisar,.decision.mista,.decision.indiferente{background:var(--gold);color:#251800}
+@media(max-width:600px){.study-config{grid-template-columns:1fr}.range-cell{font-size:9px;padding:7px 0}.range-grid{gap:1px}}

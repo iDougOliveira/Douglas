@@ -10,13 +10,17 @@ fi
 
 mkdir -p "$TARGET_DIR/static"
 cp "$SOURCE_DIR/app.py" "$TARGET_DIR/app.py"
+cp "$SOURCE_DIR/strategy.py" "$TARGET_DIR/strategy.py"
+cp "$SOURCE_DIR/VERSION" "$TARGET_DIR/VERSION"
 cp "$SOURCE_DIR/make_password.py" "$TARGET_DIR/make_password.py"
 cp "$SOURCE_DIR/install.sh" "$TARGET_DIR/install.sh"
 cp "$SOURCE_DIR/test_app.py" "$TARGET_DIR/test_app.py"
+cp "$SOURCE_DIR/test_strategy.py" "$TARGET_DIR/test_strategy.py"
 cp "$SOURCE_DIR/README.md" "$TARGET_DIR/README.md"
 cp "$SOURCE_DIR/static/index.html" "$TARGET_DIR/static/index.html"
 cp "$SOURCE_DIR/static/app.js" "$TARGET_DIR/static/app.js"
 cp "$SOURCE_DIR/static/style.css" "$TARGET_DIR/static/style.css"
+cp "$SOURCE_DIR/static/positions.json" "$TARGET_DIR/static/positions.json"
 chmod +x "$TARGET_DIR/install.sh" "$TARGET_DIR/make_password.py"
 
 sudo systemctl restart pokercoach.service
