@@ -60,3 +60,10 @@ A seleção pode conter margem verde/escura ao redor das cartas. O reconhecedor 
 - mão e board só são enviados depois de 3 capturas estáveis;
 - nenhuma ação é enviada ao software de poker;
 - o bridge aceita apenas origens locais/privadas e permanece restrito ao loopback do Windows.
+
+
+## V0.3.1 — relay pelo Beelink
+
+O navegador não acessa mais `127.0.0.1:8766`. O PokerVision envia o estado diretamente ao PokerCoach no Beelink e a página consulta o próprio servidor, evitando bloqueios de Local Network Access do navegador.
+
+Destinos tentados automaticamente: `192.168.15.140:8765`, `Beelink:8765` e `beelink.local:8765`. O primeiro que responder passa a ser preferido.
