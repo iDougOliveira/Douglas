@@ -45,3 +45,9 @@ Captura por coordenadas lê os pixels visíveis naquela posição da tela. Se ou
 
 
 A seleção pode conter margem verde/escura ao redor das cartas. O reconhecedor encontra o corpo branco de cada carta e recorta cada carta internamente antes de comparar valor e naipe.
+
+
+### V0.2.1
+- detecção das cartas passa a procurar o retângulo branco da própria carta;
+- a seleção pode ter margem extra ao redor das cartas;
+- não depende mais de dividir a região em posições de largura fixa.
