@@ -38,13 +38,15 @@ jobs:
       - name: JavaScript selector smoke
         run: |
           python - <<'PY'
-          import re
           from pathlib import Path
           s = Path("static/app.js").read_text()
-          singles = re.findall(r'(?<!\\$)\\$\\([^;\\n]*?\\)\\.forEach', s)
-          triples = re.findall(r'\\$\\$\\$\\(', s)
-          assert not singles, f"Single-element selector used with forEach: {singles}"
-          assert not triples, f"Invalid triple-dollar selector: {triples}"
+          bad = []
+          for line in s.splitlines():
+              stripped = line.lstrip()
+              if stripped.startswith("$(") and ".forEach" in stripped:
+                  bad.append(stripped)
+          assert not bad, f"Single-element selector used with forEach: {bad}"
+          assert "$$(" not in s, "Invalid triple-dollar selector"
           print("Selector smoke OK")
           PY
       - name: Shell syntax
