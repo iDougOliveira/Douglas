@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.1.3">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.2.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.1.3 · SELEÇÃO RÁPIDA</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.2.0 · POKERVISION</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -48,8 +48,13 @@
           <p id="tableHint" class="hint" aria-live="polite">Carregando posições…</p>
         </div>
         <div>
-          <h2 class="section-title">2. Escolha suas cartas</h2>
-          <p class="hint">Clique em uma carta e escolha direto no baralho completo. A próxima carta abre automaticamente.</p>
+          <h2 class="section-title">2. Suas cartas</h2>
+          <p class="hint">Com PokerVision ativo, mão e board entram sozinhos. Clique nas cartas apenas para correção/manual.</p>
+          <div id="visionBar" class="vision-bar disconnected">
+            <span class="vision-dot" aria-hidden="true"></span>
+            <span id="visionStatus">Procurando PokerVision no Windows…</span>
+            <button type="button" id="visionToggle" class="mini-btn">Automático ON</button>
+          </div>
           <div class="hole-cards"><button type="button" class="card-slot" data-slot="card1"><span>+</span><small>Carta 1</small></button><button type="button" class="card-slot" data-slot="card2"><span>+</span><small>Carta 2</small></button></div>
           <div id="preflopContext">
             <h2 class="section-title situation-title">3. O que aconteceu antes?</h2>
@@ -57,7 +62,15 @@
             <input type="hidden" name="situation" value="unopened">
             <div id="raiseInputs" class="advanced-grid" hidden>
               <label>Quem aumentou?<select name="opener_position"><option value="">Selecione a posição</option></select></label>
-              <label>Aumentou PARA (BB)<input name="open_to_bb" type="number" value="3" min="2" step="0.1"></label>
+              <label>Aumentou PARA (BB)
+                <input name="open_to_bb" type="number" value="2.5" min="2" step="0.1">
+                <span class="quick-values">
+                  <button type="button" class="quick-value" data-target="open_to_bb" data-value="2">2</button>
+                  <button type="button" class="quick-value" data-target="open_to_bb" data-value="2.5">2,5</button>
+                  <button type="button" class="quick-value" data-target="open_to_bb" data-value="3">3</button>
+                  <button type="button" class="quick-value" data-target="open_to_bb" data-value="4">4</button>
+                </span>
+              </label>
               <label>Outros pagaram o aumento?<select name="callers"><option value="0">Não</option><option value="1">Sim</option></select></label>
               <p class="hint">Valor total do raise, não o acréscimo.</p>
             </div>
@@ -65,13 +78,29 @@
           <div id="postflopContext" hidden>
             <h2 class="section-title situation-title">3. Ação no <span id="postStreetName">FLOP</span></h2>
             <div class="action-choices post-actions">
-              <button type="button" class="post-action active" data-value="checked_to_hero">Ninguém apostou</button>
-              <button type="button" class="post-action" data-value="facing_bet">Tenho aposta para pagar</button>
+              <button type="button" class="post-action active" data-value="checked_to_hero">NÃO APOSTARAM</button>
+              <button type="button" class="post-action" data-value="facing_bet">APOSTARAM</button>
             </div>
             <input type="hidden" name="post_action" value="checked_to_hero">
             <div class="advanced-grid post-grid">
-              <label>Pote atual (BB)<input name="pot_bb" type="number" value="6" min="0.1" step="0.1"></label>
-              <label id="callAmount" hidden>Quanto pagar (BB)<input name="call_bb" type="number" value="2" min="0" step="0.1"></label>
+              <label>Pote atual (BB)
+                <input name="pot_bb" type="number" value="6" min="0.1" step="0.1">
+                <span class="quick-values">
+                  <button type="button" class="quick-value" data-target="pot_bb" data-value="3">3</button>
+                  <button type="button" class="quick-value" data-target="pot_bb" data-value="6">6</button>
+                  <button type="button" class="quick-value" data-target="pot_bb" data-value="10">10</button>
+                  <button type="button" class="quick-value" data-target="pot_bb" data-value="15">15</button>
+                </span>
+              </label>
+              <label id="callAmount" hidden>Quanto pagar (BB)
+                <input name="call_bb" type="number" value="2" min="0" step="0.1">
+                <span class="quick-values">
+                  <button type="button" class="quick-value" data-target="call_bb" data-value="1">1</button>
+                  <button type="button" class="quick-value" data-target="call_bb" data-value="2">2</button>
+                  <button type="button" class="quick-value" data-target="call_bb" data-value="3">3</button>
+                  <button type="button" class="quick-value" data-target="call_bb" data-value="5">5</button>
+                </span>
+              </label>
               <label>Adversários ainda na mão<select name="active_opponents"><option value="1">1</option><option value="2">2+</option></select></label>
             </div>
           </div>
@@ -118,5 +147,5 @@
   <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
   <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.1.3"></script>
+<script src="/app.js?v=3.2.0"></script>
 </body></html>
