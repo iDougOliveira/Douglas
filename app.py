@@ -52,13 +52,14 @@ def init_db() -> None:
 def analyze(payload: dict) -> dict:
     result = strategy.decide(payload)
     result["input"] = payload
-    with sqlite3.connect(DB_PATH) as db:
-        db.execute(
-            "INSERT INTO reviews(created_at,mode,position,hand,stack_bb,recommendation,details) VALUES(?,?,?,?,?,?,?)",
-            (int(time.time()), payload.get("mode", "cash"), result["position"],
-             result["hand"], float(payload.get("stack_bb", 100)), result["action"],
-             json.dumps(result, ensure_ascii=False)),
-        )
+    if payload.get("record_review") is True:
+        with sqlite3.connect(DB_PATH) as db:
+            db.execute(
+                "INSERT INTO reviews(created_at,mode,position,hand,stack_bb,recommendation,details) VALUES(?,?,?,?,?,?,?)",
+                (int(time.time()), payload.get("mode", "cash"), result["position"],
+                 result["hand"], float(payload.get("stack_bb", 100)), result["action"],
+                 json.dumps(result, ensure_ascii=False)),
+            )
     return result
 
 
