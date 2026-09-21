@@ -195,9 +195,9 @@ def _recognize_card(card: np.ndarray) -> CardReading | None:
     )
 
     # Scores are template-match scores, not probabilities.
-    if rank_score < 0.42 or rank_margin < 0.025:
+    if rank_score < 0.55 or rank_margin < 0.08:
         return None
-    if suit_score < 0.48 or suit_margin < 0.025:
+    if suit_score < 0.55 or suit_margin < 0.08:
         return None
 
     return CardReading(
@@ -208,72 +208,146 @@ def _recognize_card(card: np.ndarray) -> CardReading | None:
     )
 
 
-def _extract_slots(
+def _runs(active: np.ndarray) -> list[list[int]]:
+    result: list[list[int]] = []
+    start: int | None = None
+
+    for index, value in enumerate(active):
+        if value and start is None:
+            start = index
+
+        if start is not None and (not value or index == len(active) - 1):
+            end = index if value and index == len(active) - 1 else index - 1
+            if end - start + 1 >= 4:
+                result.append([start, end])
+            start = None
+
+    return result
+
+
+def _detect_card_boxes(
     image_bgr: np.ndarray,
     slot_count: int,
-) -> tuple[list[np.ndarray | None], tuple[bool, ...]]:
+) -> list[tuple[int, int, int, int]]:
     height, width = image_bgr.shape[:2]
-    if width < slot_count * 10 or height < 20:
-        return [None] * slot_count, tuple(False for _ in range(slot_count))
+    if height < 20 or width < 20:
+        return []
 
     white = np.all(image_bgr > 170, axis=2)
     white_per_column = white.sum(axis=0)
-    threshold = max(6, int(height * 0.22))
+    max_column = int(white_per_column.max()) if white_per_column.size else 0
 
-    slots: list[np.ndarray | None] = []
-    occupied: list[bool] = []
+    if max_column < 12:
+        return []
 
-    for index in range(slot_count):
-        left = round(index * width / slot_count)
-        right = round((index + 1) * width / slot_count)
-        local = np.where(white_per_column[left:right] > threshold)[0]
+    column_threshold = max(5, int(max_column * 0.25))
+    raw_runs = _runs(white_per_column >= column_threshold)
 
-        if len(local) == 0:
-            slots.append(None)
-            occupied.append(False)
+    estimated_width = max_column * (1.40 if slot_count == 2 else 0.72)
+    max_single_card_span = max(30, min(100, int(estimated_width * 1.25)))
+
+    merged: list[list[int]] = []
+    for current in raw_runs:
+        if not merged:
+            merged.append(current)
             continue
 
-        first = left + int(local[0])
-        if first - left > (right - left) * 0.55:
-            slots.append(None)
-            occupied.append(False)
+        previous = merged[-1]
+        gap = current[0] - previous[1] - 1
+        combined_span = current[1] - previous[0] + 1
+        previous_width = previous[1] - previous[0] + 1
+        current_width = current[1] - current[0] + 1
+
+        should_merge = (
+            gap <= 10
+            and combined_span <= max_single_card_span
+            and previous_width < estimated_width * 0.82
+            and (
+                combined_span >= estimated_width * 0.65
+                or current_width < estimated_width * 0.65
+            )
+        )
+
+        if should_merge:
+            previous[1] = current[1]
+        else:
+            merged.append(current)
+
+    minimum_width = max(10, int(estimated_width * 0.28))
+    boxes: list[tuple[int, int, int, int]] = []
+
+    for x0, x1 in merged:
+        card_width = x1 - x0 + 1
+        if card_width < minimum_width:
             continue
 
-        x0 = max(0, first - 1)
-        card_width = min(59, width - x0)
-        slots.append(image_bgr[:, x0:x0 + card_width])
-        occupied.append(True)
+        card_columns = white[:, x0:x1 + 1]
+        white_per_row = card_columns.sum(axis=1)
+        max_row = int(white_per_row.max()) if white_per_row.size else 0
+        if max_row < 6:
+            continue
 
-    return slots, tuple(occupied)
+        row_threshold = max(4, int(max_row * 0.20))
+        ys = np.where(white_per_row >= row_threshold)[0]
+        if not len(ys):
+            continue
+
+        y0 = int(ys[0])
+        y1 = int(ys[-1])
+        card_height = y1 - y0 + 1
+
+        if card_height < max(14, int(max_column * 0.55)):
+            continue
+
+        boxes.append((x0, y0, card_width, card_height))
+
+    if boxes:
+        tallest = max(box[3] for box in boxes)
+        boxes = [
+            box
+            for box in boxes
+            if box[3] >= max(14, int(tallest * 0.55))
+        ]
+
+    if len(boxes) > slot_count:
+        boxes = sorted(
+            sorted(
+                boxes,
+                key=lambda box: box[2] * box[3],
+                reverse=True,
+            )[:slot_count],
+            key=lambda box: box[0],
+        )
+
+    return boxes
 
 
 def recognize_region(image: Image.Image, slot_count: int) -> RegionReading:
     rgb = np.asarray(image.convert("RGB"))
     image_bgr = cv2.cvtColor(rgb, cv2.COLOR_RGB2BGR)
-    slots, occupied = _extract_slots(image_bgr, slot_count)
+    boxes = _detect_card_boxes(image_bgr, slot_count)
 
     readings: list[CardReading] = []
     uncertain = False
-    seen_gap = False
 
-    for present, slot in zip(occupied, slots):
-        if not present:
-            seen_gap = True
-            continue
+    for x, y, width, height in boxes:
+        card = image_bgr[y:y + height, x:x + width]
+        reading = _recognize_card(card)
 
-        if seen_gap:
-            # Hole cards and community cards fill from left to right.
-            uncertain = True
-
-        assert slot is not None
-        reading = _recognize_card(slot)
         if reading is None:
             uncertain = True
             continue
+
         readings.append(reading)
 
-    if sum(occupied) != len(readings):
+    if len(readings) != len(boxes):
         uncertain = True
+
+    occupied_count = min(len(boxes), slot_count)
+    occupied = tuple(
+        [True] * occupied_count
+        + [False] * (slot_count - occupied_count)
+    )
 
     return RegionReading(
         cards=tuple(readings),
