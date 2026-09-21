@@ -1,0 +1,500 @@
+from __future__ import annotations
+
+import ctypes
+import json
+import os
+import time
+from datetime import datetime
+from pathlib import Path
+import tkinter as tk
+from tkinter import messagebox, ttk
+
+import mss
+from PIL import Image, ImageTk
+
+
+APP_VERSION = "0.1.0"
+APP_NAME = "PokerVision"
+
+
+def enable_dpi_awareness() -> None:
+    """Keep Tk coordinates aligned with physical screen pixels on Windows."""
+    if os.name != "nt":
+        return
+    try:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)
+        return
+    except Exception:
+        pass
+    try:
+        ctypes.windll.user32.SetProcessDPIAware()
+    except Exception:
+        pass
+
+
+def config_path() -> Path:
+    base = Path(os.environ.get("APPDATA", Path.home()))
+    path = base / APP_NAME
+    path.mkdir(parents=True, exist_ok=True)
+    return path / "config.json"
+
+
+def capture_dir() -> Path:
+    path = Path.home() / "PokerVisionCaptures"
+    path.mkdir(parents=True, exist_ok=True)
+    return path
+
+
+def load_config() -> dict:
+    path = config_path()
+    if not path.exists():
+        return {"hand": None, "board": None}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return {
+            "hand": data.get("hand"),
+            "board": data.get("board"),
+        }
+    except Exception:
+        return {"hand": None, "board": None}
+
+
+def save_config(config: dict) -> None:
+    config_path().write_text(
+        json.dumps(config, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def grab_box(box: dict) -> Image.Image:
+    monitor = {
+        "left": int(box["x"]),
+        "top": int(box["y"]),
+        "width": int(box["width"]),
+        "height": int(box["height"]),
+    }
+    with mss.mss() as sct:
+        shot = sct.grab(monitor)
+    return Image.frombytes("RGB", shot.size, shot.rgb)
+
+
+class RegionSelector:
+    def __init__(
+        self,
+        root: tk.Tk,
+        image: Image.Image,
+        virtual_box: dict,
+        label: str,
+    ) -> None:
+        self.result: dict | None = None
+        self.start_x = 0
+        self.start_y = 0
+        self.rect_id: int | None = None
+        self.virtual_box = virtual_box
+
+        self.window = tk.Toplevel(root)
+        self.window.overrideredirect(True)
+        self.window.attributes("-topmost", True)
+        self.window.configure(bg="black")
+
+        left = int(virtual_box["left"])
+        top = int(virtual_box["top"])
+        width = int(virtual_box["width"])
+        height = int(virtual_box["height"])
+        self.window.geometry(f"{width}x{height}{left:+d}{top:+d}")
+
+        self.canvas = tk.Canvas(
+            self.window,
+            width=width,
+            height=height,
+            highlightthickness=0,
+            cursor="crosshair",
+        )
+        self.canvas.pack(fill="both", expand=True)
+
+        self.photo = ImageTk.PhotoImage(image)
+        self.canvas.create_image(0, 0, anchor="nw", image=self.photo)
+
+        self.canvas.create_rectangle(
+            16,
+            16,
+            590,
+            72,
+            fill="#07130f",
+            outline="#38d996",
+            width=2,
+        )
+        self.canvas.create_text(
+            30,
+            31,
+            anchor="nw",
+            text=f"Selecione: {label}",
+            fill="white",
+            font=("Segoe UI", 18, "bold"),
+        )
+        self.canvas.create_text(
+            30,
+            56,
+            anchor="nw",
+            text="Arraste o retângulo. ESC cancela.",
+            fill="#b7c8c0",
+            font=("Segoe UI", 11),
+        )
+
+        self.canvas.bind("<ButtonPress-1>", self.on_press)
+        self.canvas.bind("<B1-Motion>", self.on_drag)
+        self.canvas.bind("<ButtonRelease-1>", self.on_release)
+        self.window.bind("<Escape>", self.cancel)
+        self.window.focus_force()
+        self.window.grab_set()
+
+    def on_press(self, event: tk.Event) -> None:
+        self.start_x = int(event.x)
+        self.start_y = int(event.y)
+        if self.rect_id is not None:
+            self.canvas.delete(self.rect_id)
+        self.rect_id = self.canvas.create_rectangle(
+            self.start_x,
+            self.start_y,
+            self.start_x,
+            self.start_y,
+            outline="#38d996",
+            width=3,
+        )
+
+    def on_drag(self, event: tk.Event) -> None:
+        if self.rect_id is None:
+            return
+        self.canvas.coords(
+            self.rect_id,
+            self.start_x,
+            self.start_y,
+            int(event.x),
+            int(event.y),
+        )
+
+    def on_release(self, event: tk.Event) -> None:
+        x1 = min(self.start_x, int(event.x))
+        y1 = min(self.start_y, int(event.y))
+        x2 = max(self.start_x, int(event.x))
+        y2 = max(self.start_y, int(event.y))
+        width = x2 - x1
+        height = y2 - y1
+        if width < 20 or height < 20:
+            return
+
+        self.result = {
+            "x": int(self.virtual_box["left"]) + x1,
+            "y": int(self.virtual_box["top"]) + y1,
+            "width": width,
+            "height": height,
+        }
+        self.window.grab_release()
+        self.window.destroy()
+
+    def cancel(self, _event: tk.Event | None = None) -> None:
+        self.result = None
+        try:
+            self.window.grab_release()
+        except Exception:
+            pass
+        self.window.destroy()
+
+
+class PokerVisionApp:
+    REFRESH_MS = 250
+
+    def __init__(self, root: tk.Tk) -> None:
+        self.root = root
+        self.config = load_config()
+        self.running = False
+        self.hand_photo: ImageTk.PhotoImage | None = None
+        self.board_photo: ImageTk.PhotoImage | None = None
+
+        root.title(f"{APP_NAME} {APP_VERSION}")
+        root.geometry("920x640")
+        root.minsize(760, 560)
+        root.configure(bg="#07130f")
+        root.protocol("WM_DELETE_WINDOW", self.close)
+
+        self.style = ttk.Style()
+        try:
+            self.style.theme_use("clam")
+        except tk.TclError:
+            pass
+        self.style.configure("TFrame", background="#07130f")
+        self.style.configure("Card.TFrame", background="#0e211a")
+        self.style.configure(
+            "TLabel",
+            background="#07130f",
+            foreground="#edf8f3",
+            font=("Segoe UI", 10),
+        )
+        self.style.configure(
+            "Muted.TLabel",
+            background="#07130f",
+            foreground="#9bb5aa",
+            font=("Segoe UI", 9),
+        )
+        self.style.configure(
+            "Title.TLabel",
+            background="#07130f",
+            foreground="#edf8f3",
+            font=("Segoe UI", 20, "bold"),
+        )
+        self.style.configure(
+            "Status.TLabel",
+            background="#0e211a",
+            foreground="#38d996",
+            font=("Segoe UI", 11, "bold"),
+        )
+        self.style.configure(
+            "TButton",
+            padding=(12, 8),
+            font=("Segoe UI", 10),
+        )
+
+        self.build_ui()
+        self.refresh_region_labels()
+        self.root.after(100, self.preview_once)
+
+    def build_ui(self) -> None:
+        outer = ttk.Frame(self.root, padding=18)
+        outer.pack(fill="both", expand=True)
+
+        top = ttk.Frame(outer)
+        top.pack(fill="x")
+        ttk.Label(top, text="PokerVision", style="Title.TLabel").pack(side="left")
+        ttk.Label(
+            top,
+            text=f"v{APP_VERSION} · captura por coordenadas",
+            style="Muted.TLabel",
+        ).pack(side="right", pady=(8, 0))
+
+        ttk.Label(
+            outer,
+            text=(
+                "Selecione uma vez as regiões da sua mão e do board. "
+                "Depois o programa captura somente essas coordenadas."
+            ),
+            style="Muted.TLabel",
+        ).pack(anchor="w", pady=(4, 14))
+
+        actions = ttk.Frame(outer)
+        actions.pack(fill="x", pady=(0, 14))
+
+        ttk.Button(
+            actions,
+            text="1. Selecionar MÃO",
+            command=lambda: self.select_region("hand"),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="2. Selecionar BOARD",
+            command=lambda: self.select_region("board"),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions,
+            text="Iniciar monitoramento",
+            command=self.start,
+        ).pack(side="left", padx=(12, 8))
+        ttk.Button(
+            actions,
+            text="Parar",
+            command=self.stop,
+        ).pack(side="left")
+
+        coords = ttk.Frame(outer, style="Card.TFrame", padding=12)
+        coords.pack(fill="x", pady=(0, 14))
+        self.hand_coords = ttk.Label(coords, text="")
+        self.hand_coords.pack(anchor="w")
+        self.board_coords = ttk.Label(coords, text="")
+        self.board_coords.pack(anchor="w", pady=(4, 0))
+
+        previews = ttk.Frame(outer)
+        previews.pack(fill="both", expand=True)
+        previews.columnconfigure(0, weight=1)
+        previews.columnconfigure(1, weight=1)
+        previews.rowconfigure(1, weight=1)
+
+        ttk.Label(previews, text="MÃO", style="TLabel").grid(
+            row=0, column=0, sticky="w", padx=(0, 7)
+        )
+        ttk.Label(previews, text="BOARD", style="TLabel").grid(
+            row=0, column=1, sticky="w", padx=(7, 0)
+        )
+
+        self.hand_preview = tk.Label(
+            previews,
+            bg="#0b1713",
+            fg="#9bb5aa",
+            text="Região não configurada",
+            bd=1,
+            relief="solid",
+        )
+        self.hand_preview.grid(
+            row=1, column=0, sticky="nsew", padx=(0, 7), pady=(6, 0)
+        )
+        self.board_preview = tk.Label(
+            previews,
+            bg="#0b1713",
+            fg="#9bb5aa",
+            text="Região não configurada",
+            bd=1,
+            relief="solid",
+        )
+        self.board_preview.grid(
+            row=1, column=1, sticky="nsew", padx=(7, 0), pady=(6, 0)
+        )
+
+        bottom = ttk.Frame(outer)
+        bottom.pack(fill="x", pady=(14, 0))
+        self.status = ttk.Label(
+            bottom,
+            text="Configure as duas regiões.",
+            style="Status.TLabel",
+            padding=(12, 10),
+        )
+        self.status.pack(side="left", fill="x", expand=True)
+
+        ttk.Button(
+            bottom,
+            text="Salvar amostra",
+            command=self.save_sample,
+        ).pack(side="right", padx=(10, 0))
+
+    def select_region(self, key: str) -> None:
+        label = "SUAS DUAS CARTAS" if key == "hand" else "FLOP / TURN / RIVER"
+        self.stop()
+        self.root.withdraw()
+        self.root.update_idletasks()
+        time.sleep(0.20)
+
+        try:
+            with mss.mss() as sct:
+                virtual = dict(sct.monitors[0])
+                shot = sct.grab(virtual)
+            image = Image.frombytes("RGB", shot.size, shot.rgb)
+
+            selector = RegionSelector(self.root, image, virtual, label)
+            self.root.wait_window(selector.window)
+            if selector.result is not None:
+                self.config[key] = selector.result
+                save_config(self.config)
+        except Exception as exc:
+            messagebox.showerror("PokerVision", f"Falha ao selecionar região:\n{exc}")
+        finally:
+            self.root.deiconify()
+            self.root.lift()
+            self.root.focus_force()
+            self.refresh_region_labels()
+            self.preview_once()
+
+    def refresh_region_labels(self) -> None:
+        self.hand_coords.configure(text=self.format_region("MÃO", self.config["hand"]))
+        self.board_coords.configure(
+            text=self.format_region("BOARD", self.config["board"])
+        )
+        if self.config["hand"] and self.config["board"]:
+            self.status.configure(text="Pronto para iniciar o monitoramento.")
+        else:
+            self.status.configure(text="Configure as duas regiões.")
+
+    @staticmethod
+    def format_region(name: str, region: dict | None) -> str:
+        if not region:
+            return f"{name}: não configurada"
+        return (
+            f"{name}: x={region['x']}  y={region['y']}  "
+            f"largura={region['width']}  altura={region['height']}"
+        )
+
+    @staticmethod
+    def fit_preview(image: Image.Image, max_w: int = 410, max_h: int = 330) -> Image.Image:
+        copy = image.copy()
+        copy.thumbnail((max_w, max_h), Image.Resampling.LANCZOS)
+        return copy
+
+    def preview_region(self, region: dict | None, widget: tk.Label, kind: str) -> None:
+        if not region:
+            widget.configure(image="", text="Região não configurada")
+            if kind == "hand":
+                self.hand_photo = None
+            else:
+                self.board_photo = None
+            return
+
+        image = grab_box(region)
+        preview = self.fit_preview(image)
+        photo = ImageTk.PhotoImage(preview)
+        widget.configure(image=photo, text="")
+        if kind == "hand":
+            self.hand_photo = photo
+        else:
+            self.board_photo = photo
+
+    def preview_once(self) -> None:
+        try:
+            self.preview_region(self.config["hand"], self.hand_preview, "hand")
+            self.preview_region(self.config["board"], self.board_preview, "board")
+        except Exception as exc:
+            self.status.configure(text=f"Falha de captura: {exc}")
+
+    def start(self) -> None:
+        if not self.config["hand"] or not self.config["board"]:
+            messagebox.showwarning(
+                "PokerVision",
+                "Selecione primeiro a região da MÃO e a região do BOARD.",
+            )
+            return
+        if self.running:
+            return
+        self.running = True
+        self.status.configure(text="CAPTURA ATIVA · lendo MÃO e BOARD pelas coordenadas.")
+        self.refresh_loop()
+
+    def stop(self) -> None:
+        self.running = False
+        if self.config["hand"] and self.config["board"]:
+            self.status.configure(text="Monitoramento parado. Regiões continuam salvas.")
+
+    def refresh_loop(self) -> None:
+        if not self.running:
+            return
+        self.preview_once()
+        self.root.after(self.REFRESH_MS, self.refresh_loop)
+
+    def save_sample(self) -> None:
+        if not self.config["hand"] or not self.config["board"]:
+            messagebox.showwarning(
+                "PokerVision",
+                "Configure MÃO e BOARD antes de salvar uma amostra.",
+            )
+            return
+        stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        folder = capture_dir()
+        try:
+            grab_box(self.config["hand"]).save(folder / f"{stamp}_hand.png")
+            grab_box(self.config["board"]).save(folder / f"{stamp}_board.png")
+        except Exception as exc:
+            messagebox.showerror("PokerVision", f"Falha ao salvar amostra:\n{exc}")
+            return
+        messagebox.showinfo(
+            "PokerVision",
+            f"Amostras salvas em:\n{folder}",
+        )
+
+    def close(self) -> None:
+        self.running = False
+        self.root.destroy()
+
+
+def main() -> None:
+    enable_dpi_awareness()
+    root = tk.Tk()
+    PokerVisionApp(root)
+    root.mainloop()
+
+
+if __name__ == "__main__":
+    main()
