@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.1.0">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.1.1">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.1.0 · DECISÃO VISUAL AUTOMÁTICA</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.1.1 · SELEÇÃO RÁPIDA</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -49,7 +49,7 @@
         </div>
         <div>
           <h2 class="section-title">2. Escolha suas cartas</h2>
-          <p class="hint">Clique em cada espaço para abrir o baralho.</p>
+          <p class="hint">Clique em uma carta e escolha direto no baralho completo. A próxima carta abre automaticamente.</p>
           <div class="hole-cards"><button type="button" class="card-slot" data-slot="card1"><span>+</span><small>Carta 1</small></button><button type="button" class="card-slot" data-slot="card2"><span>+</span><small>Carta 2</small></button></div>
           <div id="preflopContext">
             <h2 class="section-title situation-title">3. O que aconteceu antes?</h2>
@@ -114,9 +114,9 @@
   </div></section>
 </main>
 <div id="cardPicker" class="modal" hidden><div class="modal-card card-picker">
-  <div class="modal-head"><div><h2 id="pickerTitle">Escolha o naipe</h2><small id="pickerLabel">Carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div>
-  <div id="suitStep" class="picker-step"><div id="suitChoices" class="suit-choices"></div></div>
-  <div id="rankStep" class="picker-step" hidden><button type="button" id="backToSuit" class="mini-btn">← trocar naipe</button><div id="rankChoices" class="rank-choices"></div></div>
+  <div class="modal-head"><div><h2 id="pickerTitle">Escolha a carta</h2><small id="pickerLabel">Sua carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div>
+  <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
+  <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.1.0"></script>
+<script src="/app.js?v=3.1.1"></script>
 </body></html>
