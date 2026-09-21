@@ -4,3 +4,4 @@ data/
 pokercoach.env
 *.db
 
+pokervision/.venv/
