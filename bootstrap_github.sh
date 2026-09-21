@@ -99,6 +99,11 @@ fi
 STOPPED=0
 printf '%s\n' "$HEALTH"
 
+# Migração confirmada: Git é o histórico; não manter cópia duplicada.
+if [ -d "$PREVIOUS" ]; then
+  rm -rf "$PREVIOUS"
+fi
+
 sudo tee /etc/systemd/system/pokercoach-update.service >/dev/null <<EOF
 [Unit]
 Description=Atualização do PokerCoach
@@ -127,4 +132,4 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now pokercoach-update.timer
 echo "Migração concluída. Versão: $EXPECTED_VERSION"
 echo "Senha e histórico preservados. Atualização automática ativada."
-echo "Instalação anterior mantida em $PREVIOUS até confirmar o funcionamento."
+echo "Instalação consolidada em $TARGET; cópia temporária removida após health check."
