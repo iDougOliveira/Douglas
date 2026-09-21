@@ -16,6 +16,23 @@ jobs:
         run: python -m unittest -v
       - name: PokerVision syntax
         run: python -m py_compile pokervision/app.py pokervision/recognizer.py pokervision/templates_data.py
+      - name: PokerVision template integrity
+        run: |
+          python - <<'PY'
+          import base64, sys
+          sys.path.insert(0, "pokervision")
+          from templates_data import RANK_TEMPLATES_B64, SUIT_TEMPLATES_B64
+          for name, bank, expected in (
+              ("rank", RANK_TEMPLATES_B64, 128),
+              ("suit", SUIT_TEMPLATES_B64, 98),
+          ):
+              for label, items in bank.items():
+                  assert items, (name, label, "empty")
+                  for item in items:
+                      raw = base64.b64decode(item, validate=True)
+                      assert len(raw) == expected, (name, label, len(raw), expected)
+          print("PokerVision templates OK")
+          PY
       - name: JavaScript syntax
         run: node --check static/app.js
       - name: Shell syntax
