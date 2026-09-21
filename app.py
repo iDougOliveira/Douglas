@@ -6,11 +6,13 @@ from __future__ import annotations
 import hashlib
 import hmac
 import http.cookies
+import ipaddress
 import json
 import strategy
 import os
 import secrets
 import sqlite3
+import threading
 import time
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -27,6 +29,56 @@ PASSWORD_HASH = os.getenv("POKERCOACH_PASSWORD_HASH", "")
 SESSION_SECRET = os.getenv("POKERCOACH_SESSION_SECRET", secrets.token_hex(32))
 
 POSITION_ORDER = strategy.POSITIONS
+
+VISION_LOCK = threading.Lock()
+VISION_STATES: dict[str, dict] = {}
+VISION_TTL_SECONDS = 3.0
+VISION_STREETS = {"AGUARDANDO", "PRÉ-FLOP", "FLOP", "TURN", "RIVER", "INCERTO", "TRANSIÇÃO"}
+
+
+def private_client(address: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(address)
+        return bool(ip.is_private or ip.is_loopback)
+    except ValueError:
+        return False
+
+
+def valid_card_code(value: object) -> bool:
+    if not isinstance(value, str) or len(value) != 2:
+        return False
+    return value[0] in "AKQJT98765432" and value[1] in "SHDC"
+
+
+def normalize_vision_payload(data: dict) -> dict:
+    if not isinstance(data, dict):
+        raise ValueError("Estado visual inválido.")
+
+    hand = data.get("hand", [])
+    board = data.get("board", [])
+    if not isinstance(hand, list) or len(hand) not in {0, 2}:
+        raise ValueError("Mão visual inválida.")
+    if not isinstance(board, list) or len(board) not in {0, 3, 4, 5}:
+        raise ValueError("Board visual inválido.")
+    if not all(valid_card_code(card) for card in [*hand, *board]):
+        raise ValueError("Carta visual inválida.")
+    if len(set([*hand, *board])) != len([*hand, *board]):
+        raise ValueError("Carta duplicada no estado visual.")
+
+    street = str(data.get("street", "AGUARDANDO"))
+    if street not in VISION_STREETS:
+        street = "INCERTO"
+
+    return {
+        "version": str(data.get("version", ""))[:20],
+        "running": bool(data.get("running", False)),
+        "confirmed": bool(data.get("confirmed", False)),
+        "hand": hand,
+        "board": board,
+        "street": street,
+        "updated_at": float(data.get("updated_at", 0) or 0),
+    }
+
 
 def init_db() -> None:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
@@ -125,6 +177,18 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/health":
             return self.send_json({"status": "ok", "version": VERSION})
+        if path == "/api/vision/state":
+            if not self.authenticated():
+                return self.send_json({"error": "Não autorizado"}, 401)
+            client_ip = self.client_address[0]
+            with VISION_LOCK:
+                stored = VISION_STATES.get(client_ip)
+                state = dict(stored) if stored else None
+            if not state or time.time() - state.get("_received_at", 0) > VISION_TTL_SECONDS:
+                return self.send_json({"connected": False})
+            state.pop("_received_at", None)
+            state["connected"] = True
+            return self.send_json(state)
         if path == "/api/summary":
             if not self.authenticated():
                 return self.send_json({"error": "Não autorizado"}, 401)
@@ -138,6 +202,15 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             data = self.read_json()
+            if path == "/api/vision/ingest":
+                client_ip = self.client_address[0]
+                if not private_client(client_ip):
+                    return self.send_json({"error": "Origem visual não permitida"}, 403)
+                state = normalize_vision_payload(data)
+                state["_received_at"] = time.time()
+                with VISION_LOCK:
+                    VISION_STATES[client_ip] = state
+                return self.send_json({"ok": True, "version": VERSION})
             if path == "/api/login":
                 if not password_ok(str(data.get("password", ""))):
                     return self.send_json({"error": "Senha inválida"}, 401)
