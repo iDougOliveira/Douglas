@@ -45,7 +45,13 @@ def _decode_templates(
     for label, items in data.items():
         decoded = []
         for item in items:
-            raw = base64.b64decode(item)
+            raw = base64.b64decode(item, validate=True)
+            expected_bytes = (total + 7) // 8
+            if len(raw) != expected_bytes:
+                raise ValueError(
+                    f"Template {label!r} corrompido: "
+                    f"{len(raw)} bytes; esperado {expected_bytes}."
+                )
             bits = np.unpackbits(np.frombuffer(raw, dtype=np.uint8))[:total]
             decoded.append(bits.reshape(shape).astype(np.uint8) * 255)
         result[label] = decoded
