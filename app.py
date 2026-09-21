@@ -50,6 +50,15 @@ def valid_card_code(value: object) -> bool:
     return value[0] in "AKQJT98765432" and value[1] in "SHDC"
 
 
+def optional_nonnegative_number(value: object) -> float | None:
+    if value is None or value == "":
+        return None
+    number = float(value)
+    if number < 0:
+        raise ValueError("Valor visual numérico inválido.")
+    return number
+
+
 def normalize_vision_payload(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Estado visual inválido.")
@@ -69,6 +78,27 @@ def normalize_vision_payload(data: dict) -> dict:
     if street not in VISION_STREETS:
         street = "INCERTO"
 
+    table_stacks = data.get("table_stacks", [])
+    if table_stacks is None:
+        table_stacks = []
+    if not isinstance(table_stacks, list) or len(table_stacks) > 10:
+        raise ValueError("Stacks da mesa inválidos.")
+    clean_stacks = [
+        optional_nonnegative_number(value)
+        for value in table_stacks
+        if value is not None and value != ""
+    ]
+
+    blinds = data.get("blinds")
+    clean_blinds = None
+    if blinds is not None:
+        if not isinstance(blinds, dict):
+            raise ValueError("Blinds visuais inválidos.")
+        clean_blinds = {
+            "small": optional_nonnegative_number(blinds.get("small")),
+            "big": optional_nonnegative_number(blinds.get("big")),
+        }
+
     return {
         "version": str(data.get("version", ""))[:20],
         "running": bool(data.get("running", False)),
@@ -76,6 +106,14 @@ def normalize_vision_payload(data: dict) -> dict:
         "hand": hand,
         "board": board,
         "street": street,
+        "blinds": clean_blinds,
+        "ante": optional_nonnegative_number(data.get("ante")),
+        "hero_stack_chips": optional_nonnegative_number(data.get("hero_stack_chips")),
+        "hero_stack_bb": optional_nonnegative_number(data.get("hero_stack_bb")),
+        "table_stacks": clean_stacks,
+        "effective_stack_bb": optional_nonnegative_number(data.get("effective_stack_bb")),
+        "pot_chips": optional_nonnegative_number(data.get("pot_chips")),
+        "pot_bb": optional_nonnegative_number(data.get("pot_bb")),
         "updated_at": float(data.get("updated_at", 0) or 0),
     }
 
