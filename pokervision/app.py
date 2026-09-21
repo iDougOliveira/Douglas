@@ -21,7 +21,7 @@ from PIL import Image, ImageTk
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 
 
-APP_VERSION = "0.3.1"
+APP_VERSION = "0.4.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -33,6 +33,14 @@ _BRIDGE_STATE = {
     "hand": [],
     "board": [],
     "street": "AGUARDANDO",
+    "blinds": None,
+    "ante": None,
+    "hero_stack_chips": None,
+    "hero_stack_bb": None,
+    "table_stacks": [],
+    "effective_stack_bb": None,
+    "pot_chips": None,
+    "pot_bb": None,
     "updated_at": 0.0,
 }
 
@@ -278,18 +286,26 @@ def capture_dir() -> Path:
     return path
 
 
+CALIBRATION_KEYS = (
+    "hand",
+    "board",
+    "blinds",
+    "hero_stack",
+    "table_stacks",
+    "pot",
+)
+
+
 def load_config() -> dict:
     path = config_path()
+    empty = {key: None for key in CALIBRATION_KEYS}
     if not path.exists():
-        return {"hand": None, "board": None}
+        return empty
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return {
-            "hand": data.get("hand"),
-            "board": data.get("board"),
-        }
+        return {key: data.get(key) for key in CALIBRATION_KEYS}
     except Exception:
-        return {"hand": None, "board": None}
+        return empty
 
 
 def save_config(config: dict) -> None:
@@ -460,8 +476,8 @@ class PokerVisionApp:
         )
 
         root.title(f"{APP_NAME} {APP_VERSION}")
-        root.geometry("960x700")
-        root.minsize(780, 600)
+        root.geometry("1040x790")
+        root.minsize(860, 680)
         root.configure(bg="#07130f")
         root.protocol("WM_DELETE_WINDOW", self.close)
 
@@ -535,16 +551,16 @@ class PokerVisionApp:
         ).pack(anchor="w", pady=(4, 14))
 
         actions = ttk.Frame(outer)
-        actions.pack(fill="x", pady=(0, 14))
+        actions.pack(fill="x", pady=(0, 8))
 
         ttk.Button(
             actions,
-            text="1. Selecionar MÃO",
+            text="1. MÃO",
             command=lambda: self.select_region("hand"),
         ).pack(side="left", padx=(0, 8))
         ttk.Button(
             actions,
-            text="2. Selecionar BOARD",
+            text="2. BOARD",
             command=lambda: self.select_region("board"),
         ).pack(side="left", padx=(0, 8))
         ttk.Button(
@@ -558,12 +574,39 @@ class PokerVisionApp:
             command=self.stop,
         ).pack(side="left")
 
+        finance_actions = ttk.Frame(outer)
+        finance_actions.pack(fill="x", pady=(0, 14))
+        ttk.Label(
+            finance_actions,
+            text="Calibração numérica:",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(0, 8))
+        for key, label in (
+            ("blinds", "BLINDS / ANTE"),
+            ("hero_stack", "MEU STACK"),
+            ("table_stacks", "STACKS DA MESA"),
+            ("pot", "POTE"),
+        ):
+            ttk.Button(
+                finance_actions,
+                text=label,
+                command=lambda k=key: self.select_region(k),
+            ).pack(side="left", padx=(0, 6))
+
         coords = ttk.Frame(outer, style="Card.TFrame", padding=12)
         coords.pack(fill="x", pady=(0, 14))
         self.hand_coords = ttk.Label(coords, text="")
         self.hand_coords.pack(anchor="w")
         self.board_coords = ttk.Label(coords, text="")
         self.board_coords.pack(anchor="w", pady=(4, 0))
+        self.blinds_coords = ttk.Label(coords, text="")
+        self.blinds_coords.pack(anchor="w", pady=(4, 0))
+        self.hero_stack_coords = ttk.Label(coords, text="")
+        self.hero_stack_coords.pack(anchor="w", pady=(4, 0))
+        self.table_stacks_coords = ttk.Label(coords, text="")
+        self.table_stacks_coords.pack(anchor="w", pady=(4, 0))
+        self.pot_coords = ttk.Label(coords, text="")
+        self.pot_coords.pack(anchor="w", pady=(4, 0))
         self.street_readout = ttk.Label(
             coords,
             text="STREET: —",
@@ -647,7 +690,15 @@ class PokerVisionApp:
         ).pack(side="right", padx=(10, 0))
 
     def select_region(self, key: str) -> None:
-        label = "SUAS DUAS CARTAS" if key == "hand" else "FLOP / TURN / RIVER"
+        labels = {
+            "hand": "SUAS DUAS CARTAS",
+            "board": "FLOP / TURN / RIVER",
+            "blinds": "BLINDS / ANTE",
+            "hero_stack": "SEU STACK",
+            "table_stacks": "TODOS OS STACKS DA MESA",
+            "pot": "POTE",
+        }
+        label = labels.get(key, key.upper())
         self.stop()
         self.root.withdraw()
         self.root.update_idletasks()
@@ -680,8 +731,23 @@ class PokerVisionApp:
         self.board_coords.configure(
             text=self.format_region("BOARD", self.config["board"])
         )
+        self.blinds_coords.configure(
+            text=self.format_region("BLINDS/ANTE", self.config["blinds"])
+        )
+        self.hero_stack_coords.configure(
+            text=self.format_region("MEU STACK", self.config["hero_stack"])
+        )
+        self.table_stacks_coords.configure(
+            text=self.format_region("STACKS DA MESA", self.config["table_stacks"])
+        )
+        self.pot_coords.configure(
+            text=self.format_region("POTE", self.config["pot"])
+        )
         if self.config["hand"] and self.config["board"]:
-            self.status.configure(text="Pronto para iniciar o reconhecimento.")
+            extras = sum(bool(self.config[key]) for key in ("blinds", "hero_stack", "table_stacks", "pot"))
+            self.status.configure(
+                text=f"Cartas prontas · calibrações numéricas: {extras}/4 configuradas."
+            )
         else:
             self.status.configure(text="Configure as duas regiões.")
 
@@ -891,6 +957,10 @@ class PokerVisionApp:
         try:
             grab_box(self.config["hand"]).save(folder / f"{stamp}_hand.png")
             grab_box(self.config["board"]).save(folder / f"{stamp}_board.png")
+            for key in ("blinds", "hero_stack", "table_stacks", "pot"):
+                region = self.config.get(key)
+                if region:
+                    grab_box(region).save(folder / f"{stamp}_{key}.png")
         except Exception as exc:
             messagebox.showerror("PokerVision", f"Falha ao salvar amostra:\n{exc}")
             return
