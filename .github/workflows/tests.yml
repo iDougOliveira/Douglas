@@ -15,7 +15,7 @@ jobs:
       - name: Python tests
         run: python -m unittest -v
       - name: PokerVision syntax
-        run: python -m py_compile pokervision/app.py
+        run: python -m py_compile pokervision/app.py pokervision/recognizer.py pokervision/templates_data.py
       - name: JavaScript syntax
         run: node --check static/app.js
       - name: Shell syntax
