@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=2">
+</head>
+<body>
+<div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
+<main id="app" hidden>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V2 · VISUAL</span></header>
+  <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Regras de uso</button></nav>
+  <section id="review" class="panel active">
+    <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
+    <form id="reviewForm">
+      <div class="quickbar">
+        <div class="segmented" aria-label="Formato"><button type="button" class="choice active" data-field="mode" data-value="cash">Cash</button><button type="button" class="choice" data-field="mode" data-value="tournament">Torneio</button></div>
+        <div class="segmented players" aria-label="Jogadores"><span>Jogadores</span><button type="button" class="player-count" data-count="3">3</button><button type="button" class="player-count" data-count="4">4</button><button type="button" class="player-count active" data-count="8">8</button></div>
+      </div>
+      <input type="hidden" name="mode" value="cash"><input type="hidden" name="position" value="BTN">
+      <input type="hidden" name="card1"><input type="hidden" name="card2"><input type="hidden" name="completed_hand" value="true">
+
+      <div class="visual-layout">
+        <div>
+          <h2 class="section-title">1. Posicione o botão</h2>
+          <p class="hint">Você é o jogador destacado embaixo. Clique no assento que está com o botão.</p>
+          <div id="pokerTable" class="poker-table"><div class="felt"><div class="table-logo">POKER<br><small>COACH</small></div></div><div id="seats"></div></div>
+          <div class="position-readout">Sua posição: <strong id="heroPosition">BTN</strong></div>
+        </div>
+        <div>
+          <h2 class="section-title">2. Escolha suas cartas</h2>
+          <p class="hint">Clique em cada espaço para abrir o baralho.</p>
+          <div class="hole-cards"><button type="button" class="card-slot" data-slot="card1"><span>+</span><small>Carta 1</small></button><button type="button" class="card-slot" data-slot="card2"><span>+</span><small>Carta 2</small></button></div>
+          <h2 class="section-title situation-title">3. O que aconteceu antes?</h2>
+          <div class="action-choices"><button type="button" class="action-choice active" data-value="unopened">Ninguém entrou</button><button type="button" class="action-choice" data-value="facing_raise">Alguém aumentou</button></div>
+          <input type="hidden" name="situation" value="unopened">
+          <button type="button" id="advancedToggle" class="advanced-toggle">Ajustes avançados <span>⌄</span></button>
+          <div id="advanced" class="advanced-grid" hidden>
+            <label>Street<select name="street"><option value="preflop">Pré-flop</option><option value="postflop">Pós-flop</option></select></label>
+            <label>Stack efetivo (BB)<input name="stack_bb" type="number" value="100" min="1" step="0.1"></label>
+            <label>Pote atual (BB)<input name="pot_bb" type="number" value="1.5" min="0.1" step="0.1"></label>
+            <label>Valor para pagar (BB)<input name="call_bb" type="number" value="0" min="0" step="0.1"></label>
+            <label>Último raise (BB)<input name="last_raise_bb" type="number" value="0" min="0" step="0.1"></label>
+            <label>Equity estimada %<input name="estimated_equity" type="number" min="0" max="100" step="0.1" placeholder="Só pós-flop"></label>
+          </div>
+          <label class="confirm visual-confirm"><input id="studyConfirm" type="checkbox" required> É uma simulação ou mão já encerrada</label>
+          <button class="primary analyze-btn" type="submit">Analisar jogada</button>
+        </div>
+      </div>
+    </form>
+    <article id="result" class="result" hidden></article>
+  </section>
+  <section id="bankroll" class="panel">
+    <form id="sessionForm" class="grid">
+      <label>Data<input name="played_at" type="date" required></label>
+      <label>Formato<select name="mode"><option value="cash">Cash</option><option value="tournament">Torneio</option></select></label>
+      <label>Limite/torneio<input name="stakes" placeholder="NL10 ou $5 MTT" required></label>
+      <label>Entrada<input name="buy_in" type="number" min="0" step="0.01" required></label>
+      <label>Saída/prêmio<input name="cash_out" type="number" min="0" step="0.01" required></label>
+      <label class="wide">Observações<input name="notes" maxlength="500" placeholder="Mesa, duração, disciplina..."></label>
+      <button class="primary" type="submit">Registrar sessão</button>
+    </form>
+    <div id="summary" class="summary"></div>
+  </section>
+  <section id="about" class="panel"><div class="card"><h2>Escopo do sistema</h2><p>Ferramenta educacional independente. Não lê telas, não controla mouse, não se conecta a salas e não executa apostas.</p><p>Os ranges são simplificados. No modo torneio, o MVP ainda não calcula ICM; decisões próximas à premiação exigem revisão específica.</p><p>Gestão sugerida: aproximadamente 30–50 buy-ins para cash e 100–200 para torneios, ajustando ao risco e à variância.</p></div></section>
+</main>
+<div id="cardPicker" class="modal" hidden><div class="modal-card"><div class="modal-head"><div><h2>Escolha a carta</h2><small id="pickerLabel">Carta 1</small></div><button type="button" id="closePicker" class="close-btn">×</button></div><div id="deck" class="deck"></div></div></div>
+<script src="/app.js?v=2"></script>
+</body></html>
