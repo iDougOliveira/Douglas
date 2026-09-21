@@ -67,3 +67,27 @@ A seleção pode conter margem verde/escura ao redor das cartas. O reconhecedor 
 O navegador não acessa mais `127.0.0.1:8766`. O PokerVision envia o estado diretamente ao PokerCoach no Beelink e a página consulta o próprio servidor, evitando bloqueios de Local Network Access do navegador.
 
 Destinos tentados automaticamente: `192.168.15.140:8765`, `Beelink:8765` e `beelink.local:8765`. O primeiro que responder passa a ser preferido.
+
+
+## V0.4.0 — calibração de blinds, stack e pote
+
+Novas regiões persistentes:
+
+- **BLINDS / ANTE**
+- **MEU STACK**
+- **STACKS DA MESA**
+- **POTE**
+
+Essas coordenadas são salvas em `%APPDATA%\PokerVision\config.json` junto com MÃO e BOARD.
+
+O relay já está preparado para transportar:
+
+- small blind / big blind;
+- ante;
+- stack do hero em fichas;
+- stack do hero em BB;
+- stacks adversários;
+- stack efetivo em BB;
+- pote em fichas e em BB.
+
+Nesta versão, essas quatro regiões são apenas de calibração e captura de amostras. O OCR numérico será ativado após validar os recortes reais do replay.
