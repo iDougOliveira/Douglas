@@ -14,13 +14,17 @@ if not exist ".venv\Scripts\python.exe" (
   echo Criando ambiente do PokerVision...
   py -3 -m venv .venv
   if errorlevel 1 goto :fail
-  call ".venv\Scripts\activate.bat"
+)
+
+call ".venv\Scripts\activate.bat"
+
+python -c "import mss, PIL, numpy, cv2" >nul 2>nul
+if errorlevel 1 (
+  echo Instalando/atualizando dependencias do PokerVision...
   python -m pip install --upgrade pip
   if errorlevel 1 goto :fail
   pip install -r requirements.txt
   if errorlevel 1 goto :fail
-) else (
-  call ".venv\Scripts\activate.bat"
 )
 
 python app.py
