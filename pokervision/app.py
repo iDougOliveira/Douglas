@@ -11,7 +11,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 import tkinter as tk
 from tkinter import messagebox, ttk
+from urllib.error import URLError
 from urllib.parse import urlparse
+from urllib.request import Request, urlopen
 
 import mss
 from PIL import Image, ImageTk
@@ -19,7 +21,7 @@ from PIL import Image, ImageTk
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 
 
-APP_VERSION = "0.3.0"
+APP_VERSION = "0.3.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -31,6 +33,23 @@ _BRIDGE_STATE = {
     "hand": [],
     "board": [],
     "street": "AGUARDANDO",
+    "updated_at": 0.0,
+}
+
+_DEFAULT_POKERCOACH_TARGETS = (
+    "http://192.168.15.140:8765",
+    "http://Beelink:8765",
+    "http://beelink.local:8765",
+)
+_target_from_env = os.getenv("POKERCOACH_URL", "").strip().rstrip("/")
+POKERCOACH_TARGETS = (
+    (_target_from_env,) if _target_from_env else _DEFAULT_POKERCOACH_TARGETS
+)
+_DELIVERY_LOCK = threading.Lock()
+_DELIVERY_STATUS = {
+    "ok": False,
+    "target": "",
+    "message": "aguardando envio ao Beelink",
     "updated_at": 0.0,
 }
 
@@ -132,6 +151,70 @@ def start_bridge_server() -> None:
             print(f"PokerVision bridge indisponível em {BRIDGE_HOST}:{BRIDGE_PORT}: {exc}")
 
     threading.Thread(target=run, name="PokerVisionBridge", daemon=True).start()
+
+
+def _set_delivery_status(ok: bool, target: str, message: str) -> None:
+    with _DELIVERY_LOCK:
+        _DELIVERY_STATUS["ok"] = bool(ok)
+        _DELIVERY_STATUS["target"] = target
+        _DELIVERY_STATUS["message"] = message
+        _DELIVERY_STATUS["updated_at"] = time.time()
+
+
+def delivery_status() -> dict:
+    with _DELIVERY_LOCK:
+        return dict(_DELIVERY_STATUS)
+
+
+def start_beelink_publisher() -> None:
+    """Push the latest confirmed PokerVision state to PokerCoach on the LAN."""
+    def run() -> None:
+        preferred: str | None = None
+        while True:
+            state = _bridge_snapshot()
+            payload = json.dumps(state, ensure_ascii=False).encode("utf-8")
+            targets = list(POKERCOACH_TARGETS)
+            if preferred in targets:
+                targets.remove(preferred)
+                targets.insert(0, preferred)
+
+            delivered = False
+            last_error = ""
+            for base in targets:
+                url = base.rstrip("/") + "/api/vision/ingest"
+                request = Request(
+                    url,
+                    data=payload,
+                    method="POST",
+                    headers={
+                        "Content-Type": "application/json",
+                        "User-Agent": f"PokerVision/{APP_VERSION}",
+                    },
+                )
+                try:
+                    with urlopen(request, timeout=0.7) as response:
+                        if 200 <= response.status < 300:
+                            preferred = base
+                            delivered = True
+                            _set_delivery_status(True, base, "sincronizado com PokerCoach")
+                            break
+                        last_error = f"HTTP {response.status}"
+                except (OSError, URLError) as exc:
+                    last_error = str(exc)
+
+            if not delivered:
+                _set_delivery_status(
+                    False,
+                    preferred or POKERCOACH_TARGETS[0],
+                    last_error or "PokerCoach não encontrado",
+                )
+            time.sleep(0.5)
+
+    threading.Thread(
+        target=run,
+        name="PokerVisionBeelinkPublisher",
+        daemon=True,
+    ).start()
 
 
 class StableReading:
@@ -489,7 +572,7 @@ class PokerVisionApp:
         self.street_readout.pack(anchor="w", pady=(8, 0))
         self.bridge_readout = ttk.Label(
             coords,
-            text=f"SITE: pronto em {BRIDGE_HOST}:{BRIDGE_PORT}",
+            text="SITE: conectando ao PokerCoach no Beelink…",
             style="Muted.TLabel",
         )
         self.bridge_readout.pack(anchor="w", pady=(5, 0))
@@ -737,6 +820,16 @@ class PokerVisionApp:
 
     def preview_once(self) -> None:
         try:
+            delivery = delivery_status()
+            if delivery["ok"]:
+                self.bridge_readout.configure(
+                    text=f"SITE: OK · {delivery['target']}"
+                )
+            else:
+                self.bridge_readout.configure(
+                    text=f"SITE: aguardando Beelink · {delivery['message'][:70]}"
+                )
+
             hand_image = self.preview_region(
                 self.config["hand"],
                 self.hand_preview,
@@ -816,6 +909,7 @@ class PokerVisionApp:
 def main() -> None:
     enable_dpi_awareness()
     start_bridge_server()
+    start_beelink_publisher()
     root = tk.Tk()
     PokerVisionApp(root)
     root.mainloop()
