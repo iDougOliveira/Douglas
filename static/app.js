@@ -65,41 +65,56 @@ function actionLabel(action){
   return ACTION_LABELS[action]||action||'';
 }
 
-function pressureRanges(stackValue){
-  const raw=Math.max(0,Number(stackValue)||0);
-  if(raw<=0) return null;
+function formatBB(value){
+  const n=Number(value)||0;
+  const rounded=Math.round(n*100)/100;
+  return rounded.toLocaleString('pt-BR',{maximumFractionDigits:2});
+}
 
-  const whole=Math.abs(raw-Math.round(raw))<0.001 && raw>=10;
-  const step=whole?1:0.1;
-  const roundBoundary=value=>whole?Math.round(value):Math.round(value*10)/10;
-  const stack=whole?Math.round(raw):Math.round(raw*10)/10;
+function preflopPressureLabel(kind,stackValue){
+  const stack=Math.max(0,Number(stackValue)||0);
+  if(kind==='low') return '2–2,5 BB';
+  if(kind==='medium') return '3–4 BB';
+  if(kind==='high') return stack>4.5?`4,5–${formatBB(Math.max(4.5,stack-0.1))} BB`:'indisponível';
+  if(kind==='allin') return stack>0?`${formatBB(stack)} BB`:'aguardando stack';
+  return '—';
+}
 
-  const lowMax=roundBoundary(Math.min(30,stack*0.30));
-  const mediumMax=roundBoundary(Math.min(100,stack*0.60));
+function preflopRepresentative(kind,stackValue){
+  const stack=Math.max(0,Number(stackValue)||0);
+  if(kind==='low') return Math.min(stack,2.25);
+  if(kind==='medium') return Math.min(stack,3.5);
+  if(kind==='high') return Math.min(stack,5);
+  if(kind==='allin') return stack;
+  return 0;
+}
 
-  const lowMin=Math.min(step,stack);
-  const mediumMin=Math.min(stack,roundBoundary(lowMax+step));
-  const highMin=Math.min(stack,roundBoundary(mediumMax+step));
-  const highMax=Math.max(highMin,roundBoundary(stack-step));
+function postflopPressureRanges(potValue,stackValue){
+  const pot=Math.max(0,Number(potValue)||0);
+  const stack=Math.max(0,Number(stackValue)||0);
+  if(pot<=0 || stack<=0) return null;
+
+  const step=0.1;
+  const clamp=(lo,hi)=>{
+    const min=Math.round(lo*100)/100;
+    const max=Math.round(Math.min(hi,stack-step)*100)/100;
+    if(min>max || min>=stack) return null;
+    return {min,max};
+  };
 
   return {
-    low:{min:lowMin,max:Math.max(lowMin,lowMax)},
-    medium:{min:mediumMin,max:Math.max(mediumMin,mediumMax)},
-    high:{min:highMin,max:highMax},
+    low:clamp(pot*.25,pot*.33),
+    medium:clamp(pot*.50,pot*.67),
+    high:clamp(pot*.75,pot*1.00),
     allin:{min:stack,max:stack}
   };
 }
 
-function formatBB(value){
-  const n=Number(value)||0;
-  const rounded=Math.round(n*10)/10;
-  return rounded.toLocaleString('pt-BR',{maximumFractionDigits:1});
-}
-
-function pressureRangeLabel(kind,stackValue){
-  const ranges=pressureRanges(stackValue);
-  if(!ranges) return 'aguardando stack';
+function postflopPressureLabel(kind,potValue,stackValue){
+  const ranges=postflopPressureRanges(potValue,stackValue);
+  if(!ranges) return 'aguardando pote/stack';
   const r=ranges[kind];
+  if(!r) return 'indisponível';
   if(kind==='allin') return `${formatBB(r.min)} BB`;
   return `${formatBB(r.min)}–${formatBB(r.max)} BB`;
 }
@@ -108,19 +123,39 @@ function updatePressureLabels(){
   const f=$('#reviewForm')?.elements;
   if(!f) return;
   const stack=Number(f.stack_bb.value||0);
+  const pot=Number(f.pot_bb.value||0);
 
-  $$('.pressure-choice,.pre-pressure-choice').forEach(button=>{
+  $$('.pre-pressure-choice').forEach(button=>{
     const kind=button.dataset.value;
     const small=button.querySelector('small');
-    if(small) small.textContent=pressureRangeLabel(kind,stack);
+    if(small) small.textContent=preflopPressureLabel(kind,stack);
+    button.disabled=kind==='high' && stack>0 && stack<=4.5;
   });
 
-  const summary=$('#stackPressureSummary');
-  if(summary){
-    const ranges=pressureRanges(stack);
-    summary.textContent=ranges
-      ? `Faixas pelo seu stack de ${formatBB(stack)} BB`
+  const postRanges=postflopPressureRanges(pot,stack);
+  $$('.pressure-choice').forEach(button=>{
+    const kind=button.dataset.value;
+    const small=button.querySelector('small');
+    if(small) small.textContent=postflopPressureLabel(kind,pot,stack);
+    button.disabled=kind!=='allin' && Boolean(postRanges) && !postRanges[kind];
+  });
+
+  const preSummary=$('#stackPressureSummary');
+  if(preSummary){
+    preSummary.textContent=stack>0
+      ? `Pré-flop em BB · seu stack ${formatBB(stack)} BB`
       : 'Aguardando leitura do seu stack';
+  }
+
+  const postSummary=$('#postflopPressureSummary');
+  if(postSummary){
+    if(stack>0 && pot>0){
+      const ratio=stack/pot;
+      postSummary.textContent=
+        `Pote ${formatBB(pot)} BB · stack ${formatBB(stack)} BB · stack/pote ${ratio.toFixed(2)}`;
+    }else{
+      postSummary.textContent='Aguardando leitura do pote e do stack';
+    }
   }
 }
 
@@ -312,14 +347,8 @@ $$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
   $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.preflop_pressure.value=b.dataset.value;
-  const ranges=pressureRanges(f.stack_bb.value);
-  if(ranges){
-    const r=ranges[b.dataset.value];
-    const representative=b.dataset.value==='allin'
-      ? r.max
-      : (r.min+r.max)/2;
-    f.open_to_bb.value=String(Math.max(0.1,representative));
-  }
+  const representative=preflopRepresentative(b.dataset.value,f.stack_bb.value);
+  if(representative>0) f.open_to_bb.value=String(representative);
   invalidateReview();
   scheduleAnalysis();
 });
@@ -598,6 +627,7 @@ function applyVisionNumericState(state){
   }
   if(potBB>0 && Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
     f.pot_bb.value=potBB.toFixed(2);
+    updatePressureLabels();
     changed=true;
   }
 
