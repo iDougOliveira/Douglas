@@ -19,10 +19,10 @@ import mss
 from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
-from numeric_ocr import OCR_ERROR, read_pot, read_single_number
+from numeric_ocr import OCR_ERROR, read_pot, read_single_number\nfrom table_ocr import analyze_table
 
 
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.7.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -42,6 +42,10 @@ _BRIDGE_STATE = {
     "effective_stack_bb": None,
     "pot_chips": None,
     "pot_bb": None,
+    "detected_player_count": None,
+    "inactive_seats": None,
+    "table_max_seats": 9,
+    "table_scan_confidence": "",
     "updated_at": 0.0,
 }
 
@@ -101,6 +105,20 @@ def _bridge_publish_numeric(data: dict) -> None:
         "effective_stack_bb",
         "pot_chips",
         "pot_bb",
+    }
+    with _BRIDGE_LOCK:
+        for key, value in data.items():
+            if key in allowed:
+                _BRIDGE_STATE[key] = value
+        _BRIDGE_STATE["updated_at"] = time.time()
+
+
+def _bridge_publish_table(data: dict) -> None:
+    allowed = {
+        "detected_player_count",
+        "inactive_seats",
+        "table_max_seats",
+        "table_scan_confidence",
     }
     with _BRIDGE_LOCK:
         for key, value in data.items():
@@ -311,17 +329,25 @@ CALIBRATION_KEYS = (
     "board",
     "hero_stack",
     "pot",
+    "table",
 )
 
 
 def load_config() -> dict:
     path = config_path()
     empty = {key: None for key in CALIBRATION_KEYS}
+    empty["table_max_seats"] = 9
     if not path.exists():
         return empty
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
-        return {key: data.get(key) for key in CALIBRATION_KEYS}
+        result = {key: data.get(key) for key in CALIBRATION_KEYS}
+        try:
+            max_seats = int(data.get("table_max_seats", 9))
+        except (TypeError, ValueError):
+            max_seats = 9
+        result["table_max_seats"] = max(2, min(10, max_seats))
+        return result
     except Exception:
         return empty
 
@@ -490,6 +516,11 @@ class PokerVisionApp:
         self.numeric_result: dict | None = None
         self.numeric_pending = False
         self.last_numeric_scan = 0.0
+        self.table_tracker = StableReading(confirmations=3)
+        self.table_lock = threading.Lock()
+        self.table_result: dict | None = None
+        self.table_pending = False
+        self.last_table_scan = 0.0
         _bridge_publish(
             running=False,
             confirmed=False,
@@ -588,6 +619,11 @@ class PokerVisionApp:
         ).pack(side="left", padx=(0, 8))
         ttk.Button(
             actions,
+            text="3. MESA / JOGADORES",
+            command=lambda: self.select_region("table"),
+        ).pack(side="left", padx=(0, 8))
+        ttk.Button(
+            actions,
             text="Iniciar monitoramento",
             command=self.start,
         ).pack(side="left", padx=(12, 8))
@@ -614,6 +650,27 @@ class PokerVisionApp:
                 command=lambda k=key: self.select_region(k),
             ).pack(side="left", padx=(0, 6))
 
+        ttk.Label(
+            finance_actions,
+            text="Lugares máx.:",
+            style="Muted.TLabel",
+        ).pack(side="left", padx=(10, 4))
+        self.table_max_var = tk.StringVar(
+            value=str(self.config.get("table_max_seats", 9))
+        )
+        self.table_max_combo = ttk.Combobox(
+            finance_actions,
+            width=3,
+            state="readonly",
+            values=tuple(str(value) for value in range(2, 11)),
+            textvariable=self.table_max_var,
+        )
+        self.table_max_combo.pack(side="left")
+        self.table_max_combo.bind(
+            "<<ComboboxSelected>>",
+            self.on_table_max_changed,
+        )
+
         coords = ttk.Frame(outer, style="Card.TFrame", padding=12)
         coords.pack(fill="x", pady=(0, 14))
         self.hand_coords = ttk.Label(coords, text="")
@@ -624,6 +681,14 @@ class PokerVisionApp:
         self.hero_stack_coords.pack(anchor="w", pady=(4, 0))
         self.pot_coords = ttk.Label(coords, text="")
         self.pot_coords.pack(anchor="w", pady=(4, 0))
+        self.table_coords = ttk.Label(coords, text="")
+        self.table_coords.pack(anchor="w", pady=(4, 0))
+        self.table_readout = ttk.Label(
+            coords,
+            text="JOGADORES: automação não configurada",
+            style="Muted.TLabel",
+        )
+        self.table_readout.pack(anchor="w", pady=(5, 0))
         self.numeric_readout = ttk.Label(
             coords,
             text="OCR NUMÉRICO: aguardando monitoramento",
@@ -718,12 +783,32 @@ class PokerVisionApp:
             command=self.save_sample,
         ).pack(side="right", padx=(10, 0))
 
+    def on_table_max_changed(self, _event=None) -> None:
+        try:
+            value = int(self.table_max_var.get())
+        except (TypeError, ValueError):
+            value = 9
+        value = max(2, min(10, value))
+        self.config["table_max_seats"] = value
+        save_config(self.config)
+        self.table_tracker.reset()
+        _bridge_publish_table({
+            "detected_player_count": None,
+            "inactive_seats": None,
+            "table_max_seats": value,
+            "table_scan_confidence": "",
+        })
+        self.table_readout.configure(
+            text=f"JOGADORES: aguardando 3 leituras estáveis · mesa máx. {value}"
+        )
+
     def select_region(self, key: str) -> None:
         labels = {
             "hand": "SUAS DUAS CARTAS",
             "board": "FLOP / TURN / RIVER",
             "hero_stack": "SEU STACK EM BB",
             "pot": "POTE EM BB",
+            "table": "MESA COM ASSENTOS (sem chat e botões)",
         }
         label = labels.get(key, key.upper())
         self.stop()
@@ -764,10 +849,14 @@ class PokerVisionApp:
         self.pot_coords.configure(
             text=self.format_region("POTE", self.config["pot"])
         )
+        self.table_coords.configure(
+            text=self.format_region("MESA/JOGADORES", self.config.get("table"))
+        )
         if self.config["hand"] and self.config["board"]:
             extras = sum(bool(self.config[key]) for key in ("hero_stack", "pot"))
+            table_status = "mesa configurada" if self.config.get("table") else "mesa opcional não configurada"
             self.status.configure(
-                text=f"Cartas prontas · automação stack/pote: {extras}/2 configurada(s)."
+                text=f"Cartas prontas · automação stack/pote: {extras}/2 · {table_status}."
             )
         else:
             self.status.configure(text="Configure as duas regiões.")
@@ -909,6 +998,85 @@ class PokerVisionApp:
     def _round_value(value):
         return None if value is None else round(float(value), 4)
 
+    def _table_worker(self, region: dict, max_seats: int) -> None:
+        try:
+            result = analyze_table(grab_box(region), max_seats=max_seats)
+        except Exception as exc:
+            result = {"valid": False, "error": str(exc)}
+        finally:
+            with self.table_lock:
+                self.table_result = result
+                self.table_pending = False
+
+    def schedule_table_scan(self) -> None:
+        if not self.running or self.table_pending:
+            return
+        region = self.config.get("table")
+        if not region:
+            return
+        now = time.time()
+        if now - self.last_table_scan < 1.5:
+            return
+
+        self.last_table_scan = now
+        self.table_pending = True
+        max_seats = int(self.config.get("table_max_seats", 9) or 9)
+        threading.Thread(
+            target=self._table_worker,
+            args=(region, max_seats),
+            name="PokerVisionTableOCR",
+            daemon=True,
+        ).start()
+
+    def apply_table_result(self) -> None:
+        with self.table_lock:
+            data = dict(self.table_result) if self.table_result else None
+        if not data:
+            return
+        if data.get("error"):
+            self.table_readout.configure(
+                text=f"JOGADORES: OCR da mesa indisponível · {data['error']}"
+            )
+            return
+        if not data.get("valid"):
+            evidence = int(data.get("evidence_words", 0) or 0)
+            self.table_readout.configure(
+                text=f"JOGADORES: leitura pendente · evidências={evidence}"
+            )
+            return
+
+        count = int(data["player_count"])
+        inactive = int(data.get("inactive_seats", 0))
+        max_seats = int(data.get("max_seats", self.config.get("table_max_seats", 9)))
+        signature = (count, inactive, max_seats)
+        self.table_tracker.observe(signature)
+
+        if not (
+            self.table_tracker.ready
+            and self.table_tracker.stable == signature
+        ):
+            self.table_readout.configure(
+                text=(
+                    f"JOGADORES: candidato {count}/{max_seats} · "
+                    f"inativos/vazios {inactive} · confirmando 3 leituras"
+                )
+            )
+            return
+
+        confidence = str(data.get("confidence", "média"))
+        self.table_readout.configure(
+            text=(
+                f"JOGADORES: {count}/{max_seats} · "
+                f"inativos/vazios {inactive} · confirmado"
+            )
+        )
+        _bridge_publish_table({
+            "detected_player_count": count,
+            "inactive_seats": inactive,
+            "table_max_seats": max_seats,
+            "table_scan_confidence": confidence,
+        })
+
     def _numeric_signature(self, data: dict) -> tuple:
         return (
             self._round_value(data.get("hero_stack_bb")),
@@ -1025,6 +1193,8 @@ class PokerVisionApp:
 
             self.schedule_numeric_scan()
             self.apply_numeric_result()
+            self.schedule_table_scan()
+            self.apply_table_result()
 
             hand_image = self.preview_region(
                 self.config["hand"],
@@ -1054,6 +1224,13 @@ class PokerVisionApp:
         self.hand_tracker.reset()
         self.board_tracker.reset()
         self.numeric_tracker.reset()
+        self.table_tracker.reset()
+        _bridge_publish_table({
+            "detected_player_count": None,
+            "inactive_seats": None,
+            "table_max_seats": int(self.config.get("table_max_seats", 9) or 9),
+            "table_scan_confidence": "",
+        })
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
@@ -1088,7 +1265,7 @@ class PokerVisionApp:
         try:
             grab_box(self.config["hand"]).save(folder / f"{stamp}_hand.png")
             grab_box(self.config["board"]).save(folder / f"{stamp}_board.png")
-            for key in ("hero_stack", "pot"):
+            for key in ("hero_stack", "pot", "table"):
                 region = self.config.get(key)
                 if region:
                     grab_box(region).save(folder / f"{stamp}_{key}.png")
