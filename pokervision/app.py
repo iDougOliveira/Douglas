@@ -559,6 +559,7 @@ class PokerVisionApp:
         self.table_result: dict | None = None
         self.table_pending = False
         self.last_table_scan = 0.0
+        self.last_applied_table_scan_at = 0.0
         self.last_logged_card_state = None
         self.last_logged_numeric_state = None
         self.last_logged_table_state = None
@@ -1073,6 +1074,7 @@ class PokerVisionApp:
         except Exception as exc:
             result = {"valid": False, "error": str(exc)}
         finally:
+            result["_scan_at"] = time.time()
             with self.table_lock:
                 self.table_result = result
                 self.table_pending = False
@@ -1103,7 +1105,11 @@ class PokerVisionApp:
         if not data:
             return
 
-        now = time.time()
+        scan_at = float(data.get("_scan_at", 0) or 0)
+        if scan_at <= self.last_applied_table_scan_at:
+            return
+        self.last_applied_table_scan_at = scan_at
+        now = scan_at or time.time()
         if data.get("error"):
             error = str(data["error"])
             self.table_readout.configure(
