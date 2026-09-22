@@ -353,12 +353,31 @@ def postflop(data,c,r):
     source(r,"odds","texture","cbet")
     r.update(board=board, board_text=" ".join(board), hand_class=info["label"],
              board_texture=texture["label"], strategy_status="study_heuristic",
-             profile="Pós-flop automático · força da mão + textura + pot odds")
+             profile="Pós-flop automático · força da mão + textura + pressão/pot odds")
     r["notes"].append(f"Board: {' '.join(board)}. Mão atual: {info['label']}. Textura do flop: {texture['label']}.")
     r["notes"].append("A ação pós-flop é uma heurística determinística baseada em força feita, draws, textura e pot odds; não substitui um solver de ranges.")
 
     pot = number(data,"pot_bb",0,0)
     call = number(data,"call_bb",0,0)
+    pressure = str(data.get("bet_pressure", "none")).lower()
+    pressure_mid = {"low": .05, "medium": .20, "high": .50, "allin": 1.0}
+    pressure_labels = {
+        "low": "BAIXA (até 10% do stack)",
+        "medium": "MÉDIA (10–30% do stack)",
+        "high": "ALTA (30–70% do stack)",
+        "allin": "ALL-IN (>70% do stack)",
+    }
+    if call <= 0 and pressure in pressure_mid:
+        call = round(c["stack"] * pressure_mid[pressure], 4)
+        r["bet_pressure"] = pressure
+        r["notes"].append(
+            f"Pressão selecionada: {pressure_labels[pressure]}. "
+            f"Para estimar pot odds sem digitação, o modo rápido usa {pressure_mid[pressure]:.0%} "
+            f"do seu stack ({call:g} BB) como valor representativo da faixa."
+        )
+        r["notes"].append(
+            "Esta é uma aproximação para revisão rápida; não representa o tamanho exato da aposta."
+        )
     if pot <= 0:
         raise ValueError("Informe o pote atual para analisar o pós-flop.")
     opponents = int(number(data,"active_opponents",1,1,9))
