@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.8.0"
+ENGINE_VERSION = "3.8.1"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -17,6 +17,7 @@ SOURCES = {
     "defense": {"title": "PokerCoaching — 3-bet e defesa pré-flop", "url": "https://pokercoaching.com/preflop-charts/"},
     "bet_sizing": {"title": "PokerCoaching — bet sizing: 25–33%, 50–67%, 75–100% do pote", "url": "https://pokercoaching.com/cheatsheets/"},
     "spr": {"title": "GTO Wizard — stack-to-pot ratio (SPR)", "url": "https://blog.gtowizard.com/stack-to-pot-ratio/"},
+    "double_paired": {"title": "Upswing — estratégia em boards duplamente pareados", "url": "https://upswingpoker.com/double-paired-boards/"},
 }
 
 # Factual hand-set data from the public text, not copied chart artwork or solver frequencies.
@@ -585,8 +586,47 @@ def _hand_info(hole, board):
     if flush_draw and straight_draw:
         outs = min(15, outs)
 
-    return {"category": category, "label": label, "score": score, "top_pair": top_pair,
-            "overpair": overpair, "flush_draw": flush_draw, "straight_draw": straight_draw, "outs": outs}
+    board_rc = Counter(c[0] for c in board)
+    board_pair_ranks = sorted(
+        (RANKS.index(rank) + 2 for rank, count in board_rc.items() if count >= 2),
+        reverse=True,
+    )
+    board_double_paired = len(board_pair_ranks) >= 2
+
+    private_improvement = False
+    shared_kicker_value = max(RANKS.index(h[0]) + 2 for h in hole)
+    shared_kicker_rank = RANKS[shared_kicker_value - 2]
+
+    # On a double-paired board (e.g. 6-6-5-5), "two pair" may belong to the
+    # board rather than to Hero. A pocket pair only replaces the lower board
+    # pair if it ranks above that lower pair. Matching 6x/5x is already caught
+    # by a stronger full-house category above.
+    if board_double_paired and category == "two_pair":
+        if pocket:
+            pocket_value = RANKS.index(hole[0][0]) + 2
+            private_improvement = pocket_value > board_pair_ranks[1]
+
+    board_only_two_pair = (
+        board_double_paired
+        and category == "two_pair"
+        and not private_improvement
+    )
+
+    return {
+        "category": category,
+        "label": label,
+        "score": score,
+        "top_pair": top_pair,
+        "overpair": overpair,
+        "flush_draw": flush_draw,
+        "straight_draw": straight_draw,
+        "outs": outs,
+        "board_double_paired": board_double_paired,
+        "board_only_two_pair": board_only_two_pair,
+        "private_improvement": private_improvement,
+        "shared_kicker_rank": shared_kicker_rank,
+        "shared_kicker_value": shared_kicker_value,
+    }
 
 def _texture(board):
     from collections import Counter
@@ -612,7 +652,7 @@ def postflop(data,c,r):
     board = _board(data, street, c["hole"])
     info = _hand_info(c["hole"], board)
     texture = _texture(board)
-    source(r,"odds","texture","cbet","bet_sizing","spr")
+    source(r,"odds","texture","cbet","bet_sizing","spr","double_paired")
     r.update(board=board, board_text=" ".join(board), hand_class=info["label"],
              board_texture=texture["label"], strategy_status="study_heuristic",
              profile="Pós-flop automático · força da mão + textura + pressão/pot odds")
@@ -663,6 +703,51 @@ def postflop(data,c,r):
     opponents = int(number(data,"active_opponents",1,1,9))
     if opponents > 1:
         r["notes"].append("Pote multiway: o modo de estudo usa uma linha mais conservadora.")
+
+    # Critical distinction: two pair can be entirely on the board. In that
+    # case Hero does NOT own a normal two-pair value hand; the hole cards are
+    # mostly acting as a kicker. Do not route this through the generic
+    # score>=2 value-raise logic.
+    if info["board_double_paired"] and info["category"] == "two_pair":
+        if info["board_only_two_pair"]:
+            r["hand_class"] = f"dois pares da mesa + kicker {info['shared_kicker_rank']}"
+            r["notes"].append(
+                f"Os dois pares estão no board e são compartilhados por todos. "
+                f"Sua contribuição é o kicker {info['shared_kicker_rank']}; "
+                "isso não deve ser tratado como dois pares próprios para aumentar por valor."
+            )
+        else:
+            r["notes"].append(
+                "O board está duplamente pareado. Sua mão melhora o board com um pocket pair, "
+                "mas ainda não é tratada como valor automático para raise."
+            )
+
+        if call > 0:
+            # Conservative bluff-catcher baseline when villain range is unknown.
+            # Never value-raise a plain two-pair classification on a double-paired
+            # board. Kicker thresholds tighten as the observed bet gets larger.
+            if info["private_improvement"]:
+                r.update(action="CALL", sizing=f"Pagar {call:g} BB")
+            else:
+                kicker = info["shared_kicker_value"]
+                min_kicker = {
+                    "low": 11,      # J+
+                    "medium": 13,   # K+
+                    "high": 14,     # A only
+                    "allin": 15,    # no board-only kicker auto-calls a shove
+                    "none": 13,
+                }.get(pressure, 13)
+                if kicker >= min_kicker and pressure != "allin":
+                    r.update(action="CALL", sizing=f"Pagar {call:g} BB como bluff-catcher")
+                else:
+                    r.update(action="FOLD", sizing="Desistir; board compartilhado e kicker insuficiente")
+            return r
+
+        # Checked to Hero: the engine must not value-bet merely because the
+        # board itself shows two pair. Range-specific bluffs/value bets need a
+        # stronger model than the current heuristic, so default to check.
+        r.update(action="CHECK", sizing="Passar; dois pares estão na mesa")
+        return r
 
     if call > 0:
         pot_odds = 100*call/(pot+call)
