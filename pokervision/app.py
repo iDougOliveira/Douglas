@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.2"
+APP_VERSION = "0.6.3"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -236,7 +236,7 @@ def start_beelink_publisher() -> None:
                     preferred or POKERCOACH_TARGETS[0],
                     last_error or "PokerCoach não encontrado",
                 )
-            time.sleep(0.2)
+            time.sleep(0.1)
 
     threading.Thread(
         target=run,
@@ -246,10 +246,17 @@ def start_beelink_publisher() -> None:
 
 
 class StableReading:
-    """Require the same valid reading for a few frames before confirming it."""
+    """Confirm valid cards immediately while debouncing transient empty frames."""
 
-    def __init__(self, confirmations: int = 3) -> None:
+    def __init__(
+        self,
+        confirmations: int = 1,
+        empty_confirmations: int | None = None,
+    ) -> None:
         self.confirmations = confirmations
+        self.empty_confirmations = (
+            confirmations if empty_confirmations is None else empty_confirmations
+        )
         self.candidate: tuple[str, ...] | None = None
         self.count = 0
         self.stable: tuple[str, ...] = ()
@@ -273,7 +280,8 @@ class StableReading:
             self.candidate = value
             self.count = 1
 
-        if self.count >= self.confirmations:
+        required = self.empty_confirmations if len(value) == 0 else self.confirmations
+        if self.count >= required:
             self.stable = value
             self.ready = True
 
@@ -475,7 +483,7 @@ class RegionSelector:
 
 
 class PokerVisionApp:
-    REFRESH_MS = 125
+    REFRESH_MS = 100
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -483,8 +491,8 @@ class PokerVisionApp:
         self.running = False
         self.hand_photo: ImageTk.PhotoImage | None = None
         self.board_photo: ImageTk.PhotoImage | None = None
-        self.hand_tracker = StableReading(confirmations=2)
-        self.board_tracker = StableReading(confirmations=2)
+        self.hand_tracker = StableReading(confirmations=1, empty_confirmations=2)
+        self.board_tracker = StableReading(confirmations=1, empty_confirmations=2)
         self.numeric_tracker = StableReading(confirmations=2)
         self.numeric_lock = threading.Lock()
         self.numeric_result: dict | None = None
@@ -858,7 +866,7 @@ class PokerVisionApp:
         if hand_value is None or board_value is None:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="LENDO · aguardando uma leitura estável por 2 capturas."
+                text="LENDO · aguardando leitura válida das cartas."
             )
             return
 
@@ -871,7 +879,7 @@ class PokerVisionApp:
         if not current_confirmed:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="CONFIRMANDO · a mesma leitura precisa aparecer em 2 capturas."
+                text="CONFIRMANDO · validando transição da mesa."
             )
             return
 
@@ -1057,7 +1065,7 @@ class PokerVisionApp:
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
-            text="RECONHECIMENTO ATIVO · confirmando leituras em 2 capturas."
+            text="RECONHECIMENTO RÁPIDO · cartas confirmam em 1 leitura válida; vazio em 2."
         )
         self.refresh_loop()
 
