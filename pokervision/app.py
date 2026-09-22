@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.5"
+APP_VERSION = "0.6.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -236,7 +236,7 @@ def start_beelink_publisher() -> None:
                     preferred or POKERCOACH_TARGETS[0],
                     last_error or "PokerCoach não encontrado",
                 )
-            time.sleep(0.1)
+            time.sleep(0.5)
 
     threading.Thread(
         target=run,
@@ -246,17 +246,10 @@ def start_beelink_publisher() -> None:
 
 
 class StableReading:
-    """Confirm valid cards immediately while debouncing transient empty frames."""
+    """Require the same valid reading for a few frames before confirming it."""
 
-    def __init__(
-        self,
-        confirmations: int = 1,
-        empty_confirmations: int | None = None,
-    ) -> None:
+    def __init__(self, confirmations: int = 3) -> None:
         self.confirmations = confirmations
-        self.empty_confirmations = (
-            confirmations if empty_confirmations is None else empty_confirmations
-        )
         self.candidate: tuple[str, ...] | None = None
         self.count = 0
         self.stable: tuple[str, ...] = ()
@@ -280,8 +273,7 @@ class StableReading:
             self.candidate = value
             self.count = 1
 
-        required = self.empty_confirmations if len(value) == 0 else self.confirmations
-        if self.count >= required:
+        if self.count >= self.confirmations:
             self.stable = value
             self.ready = True
 
@@ -483,7 +475,7 @@ class RegionSelector:
 
 
 class PokerVisionApp:
-    REFRESH_MS = 100
+    REFRESH_MS = 250
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -491,8 +483,8 @@ class PokerVisionApp:
         self.running = False
         self.hand_photo: ImageTk.PhotoImage | None = None
         self.board_photo: ImageTk.PhotoImage | None = None
-        self.hand_tracker = StableReading(confirmations=1, empty_confirmations=2)
-        self.board_tracker = StableReading(confirmations=1, empty_confirmations=2)
+        self.hand_tracker = StableReading(confirmations=3)
+        self.board_tracker = StableReading(confirmations=3)
         self.numeric_tracker = StableReading(confirmations=2)
         self.numeric_lock = threading.Lock()
         self.numeric_result: dict | None = None
@@ -852,9 +844,7 @@ class PokerVisionApp:
         if board_value is None:
             count = sum(board.occupied_slots)
             label = "TRANSIÇÃO" if count in {1, 2} else "LEITURA INCERTA"
-            self.board_detect.configure(
-                text=f"Detectado: {label} · regiões={count} · reconhecidas={len(board.codes)}"
-            )
+            self.board_detect.configure(text=f"Detectado: {label}")
         else:
             self.board_detect.configure(text=f"Detectado: {format_codes(board_value)}")
             self.board_tracker.observe(board_value)
@@ -868,7 +858,7 @@ class PokerVisionApp:
         if hand_value is None or board_value is None:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="LENDO · aguardando leitura válida das cartas."
+                text="LENDO · aguardando uma leitura estável por 3 capturas."
             )
             return
 
@@ -881,7 +871,7 @@ class PokerVisionApp:
         if not current_confirmed:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="CONFIRMANDO · validando transição da mesa."
+                text="CONFIRMANDO · a mesma leitura precisa aparecer em 3 capturas."
             )
             return
 
@@ -1067,7 +1057,7 @@ class PokerVisionApp:
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
-            text="RECONHECIMENTO RÁPIDO · cartas confirmam em 1 leitura válida; vazio em 2."
+            text="RECONHECIMENTO ATIVO · confirmando leituras em 3 capturas."
         )
         self.refresh_loop()
 
