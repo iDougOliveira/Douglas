@@ -46,6 +46,7 @@ jobs:
               if stripped.startswith("$(") and ".forEach" in stripped:
                   bad.append(stripped)
           assert not bad, f"Single-element selector used with forEach: {bad}"
+          assert "$$(" not in s, "Invalid triple-dollar selector helper found"
           print("Selector smoke OK")
           PY
       - name: Shell syntax
