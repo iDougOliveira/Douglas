@@ -175,6 +175,10 @@ def analyze_table(image, max_seats: int = 9) -> dict:
         "player_count": player_count if valid else None,
         "max_seats": max_seats,
         "inactive_seats": inactive_count,
+        "inactive_points": [
+            [round(float(x), 4), round(float(y), 4)]
+            for x, y in inactive_clusters[:10]
+        ],
         "evidence_words": evidence_words,
         "confidence": confidence if valid else "baixa",
         "raw_text": raw,
