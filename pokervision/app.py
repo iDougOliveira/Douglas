@@ -103,7 +103,7 @@ def _bridge_publish_numeric(data: dict) -> None:
     }
     with _BRIDGE_LOCK:
         for key, value in data.items():
-            if key in allowed and value is not None:
+            if key in allowed:
                 _BRIDGE_STATE[key] = value
         _BRIDGE_STATE["updated_at"] = time.time()
 
