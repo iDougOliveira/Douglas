@@ -225,12 +225,37 @@ $$('.choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.action-choice').forEach(b=>b.onclick=()=>{
-  $$('.action-choice').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  $('#reviewForm').elements.situation.value=b.dataset.value;
+$('.pre-action').forEach(b=>b.onclick=()=>{
+  const f=$('#reviewForm').elements;
+  const same=f.situation.value===b.dataset.value;
+  $('.pre-action').forEach(x=>x.classList.remove('active'));
+  $('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+
+  if(same){
+    f.situation.value='unopened';
+    f.preflop_pressure.value='none';
+  }else{
+    b.classList.add('active');
+    f.situation.value=b.dataset.value;
+    f.preflop_pressure.value=b.dataset.value==='limped'?'none':'medium';
+    if(b.dataset.value!=='limped'){
+      const defaultPressure=$('.pre-pressure-choice[data-value="medium"]');
+      if(defaultPressure) defaultPressure.classList.add('active');
+    }
+  }
   invalidateReview();
   syncContext();
+  scheduleAnalysis();
+});
+
+$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
+  const f=$('#reviewForm').elements;
+  $('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  f.preflop_pressure.value=b.dataset.value;
+  const representative={low:2.5,medium:3.5,high:6,allin:Number(f.stack_bb.value||100)};
+  f.open_to_bb.value=String(representative[b.dataset.value]||3.5);
+  invalidateReview();
   scheduleAnalysis();
 });
 
@@ -314,7 +339,8 @@ function syncContext(){
   $('#preflopContext').hidden=postflop;
   $('#postflopContext').hidden=!postflop;
 
-  toggleInputs('#raiseInputs',!postflop && f.situation.value==='facing_raise');
+  const preNeedsPressure=!postflop && ['facing_raise','facing_3bet'].includes(f.situation.value);
+  if($('#preflopPressure')) $('#preflopPressure').hidden=!preNeedsPressure;
 
   const facingBet=postflop && f.post_action.value==='facing_bet';
   if($('#betPressure')) $('#betPressure').hidden=!facingBet;
@@ -323,19 +349,6 @@ function syncContext(){
     f.bet_pressure.value='none';
     f.call_bb.value=0;
   }
-
-  if(!positionOrder[playerCount]) return;
-  const positions=positionOrder[playerCount];
-  const order=playerCount===2?positions:[...positions.slice(3),...positions.slice(0,3)];
-  const previous=f.opener_position.value;
-  const heroIndex=order.indexOf(f.position.value);
-  const options=heroIndex>=0?order.slice(0,heroIndex):[];
-  f.opener_position.innerHTML='<option value="">Selecione a posição</option>'+
-    options.map(p=>`<option value="${p}" style="color:${positionColor(p)}">● ${p}</option>`).join('');
-  if(options.includes(previous)) f.opener_position.value=previous;
-  const opener=f.opener_position.value;
-  applyPositionColor(f.opener_position,opener);
-  f.opener_position.classList.toggle('position-selected',Boolean(opener));
 }
 
 $('#reviewForm').addEventListener('input',e=>{
@@ -345,12 +358,8 @@ $('#reviewForm').addEventListener('input',e=>{
   }
 });
 
-$('#reviewForm').addEventListener('change',e=>{
+$('#reviewForm').addEventListener('change',()=>{
   invalidateReview();
-  if(e.target?.name==='opener_position'){
-    applyPositionColor(e.target,e.target.value);
-    e.target.classList.toggle('position-selected',Boolean(e.target.value));
-  }
   syncContext();
   scheduleAnalysis();
 });
@@ -636,8 +645,9 @@ function readiness(){
   const n=boardCount();
   if(n===1||n===2)
     return 'Complete as três cartas do flop.';
-  if(f.street.value==='preflop'&&f.situation.value==='facing_raise'&&!f.opener_position.value)
-    return 'Selecione quem fez o primeiro aumento.';
+  if(f.street.value==='preflop'&&['facing_raise','facing_3bet'].includes(f.situation.value)
+      &&(!f.preflop_pressure.value||f.preflop_pressure.value==='none'))
+    return 'Escolha BAIXO, MÉDIO, ALTO ou ALL-IN.';
   if(f.street.value!=='preflop'){
     if(Number(f.pot_bb.value)<=0) return 'Aguardando leitura do pote.';
     if(f.post_action.value==='facing_bet'&&(!f.bet_pressure.value||f.bet_pressure.value==='none'))
@@ -651,6 +661,8 @@ function buildPayload(){
   const data=formData($('#reviewForm'));
   data.completed_hand=true;
   data.icm_pressure=false;
+  data.quick_preflop=true;
+  data.preflop_pressure=f.preflop_pressure?.value||'none';
   data.call_bb=0;
   data.bet_pressure=f.post_action?.value==='facing_bet'?(f.bet_pressure.value||'none'):'none';
   data.record_review=false;
