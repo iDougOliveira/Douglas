@@ -225,11 +225,11 @@ $$('.choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.pre-action').forEach(b=>b.onclick=()=>{
+$$('.pre-action').forEach(b=>b.onclick=()=>{
   const f=$('#reviewForm').elements;
   const same=f.situation.value===b.dataset.value;
-  $('.pre-action').forEach(x=>x.classList.remove('active'));
-  $('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$('.pre-action').forEach(x=>x.classList.remove('active'));
+  $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
 
   if(same){
     f.situation.value='unopened';
@@ -248,9 +248,9 @@ $('.pre-action').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
+$$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
   const f=$('#reviewForm').elements;
-  $('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.preflop_pressure.value=b.dataset.value;
   const representative={low:2.5,medium:3.5,high:6,allin:Number(f.stack_bb.value||100)};
