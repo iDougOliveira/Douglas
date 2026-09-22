@@ -117,3 +117,13 @@ A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento d
 - Envio ao PokerCoach/Beelink: 200 ms.
 - OCR de stack/pote permanece em ~1 s para não aumentar o custo do Tesseract.
 - Limiares de confiança do reconhecedor de cartas não foram relaxados.
+
+
+## V0.6.3 — confirmação imediata de cartas
+
+- Captura visual de mão/board: 100 ms.
+- Uma leitura válida já confirma mão/board.
+- Estado vazio exige 2 capturas para evitar apagar cartas durante animações.
+- Publicação ao PokerCoach/Beelink: 100 ms.
+- OCR de stack/pote continua separado e conservador.
+- Os limiares de confiança do reconhecedor de cartas permanecem inalterados.
