@@ -47,6 +47,22 @@ class StrategyTest(unittest.TestCase):
         self.assertEqual(r["action"], "ALL-IN")
         self.assertEqual(r["raise_to_bb"], 10)
 
+    def test_quick_preflop_minimal_inputs(self):
+        r = review(
+            mode="cash", players=6, position="BTN", stack=100,
+            card1="As", card2="Kh", situation="facing_raise",
+            quick_preflop=True, preflop_pressure="medium",
+        )
+        self.assertEqual(r["action"], "RAISE")
+        self.assertTrue(r["quick_preflop"])
+
+        uncovered = review(
+            mode="cash", players=6, position="BTN", stack=100,
+            card1="9s", card2="8s", situation="facing_raise",
+            quick_preflop=True, preflop_pressure="medium",
+        )
+        self.assertEqual(uncovered["action"], "SEM COBERTURA")
+
     def test_threebet_value_core(self):
         r = review(
             situation="facing_raise", opener_position="LJ",
