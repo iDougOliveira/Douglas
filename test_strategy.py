@@ -120,18 +120,24 @@ class StrategyTest(unittest.TestCase):
         )
         self.assertEqual(r["action"], "FOLD")
 
-    def test_dynamic_pressure_ranges(self):
-        r10 = strategy.pressure_ranges(10)
-        self.assertEqual(r10["low"], (1.0, 3.0))
-        self.assertEqual(r10["medium"], (4.0, 6.0))
-        self.assertEqual(r10["high"], (7.0, 9.0))
-        self.assertEqual(r10["allin"], (10.0, 10.0))
+    def test_postflop_ranges_are_pot_based(self):
+        r = strategy.postflop_pressure_ranges(6, 10)
+        self.assertEqual(r["low"], (1.5, 1.98))
+        self.assertEqual(r["medium"], (3.0, 4.02))
+        self.assertEqual(r["high"], (4.5, 6.0))
+        self.assertEqual(r["allin"], (10.0, 10.0))
 
-        r500 = strategy.pressure_ranges(500)
-        self.assertEqual(r500["low"], (1.0, 30.0))
-        self.assertEqual(r500["medium"], (31.0, 100.0))
-        self.assertEqual(r500["high"], (101.0, 499.0))
-        self.assertEqual(r500["allin"], (500.0, 500.0))
+        deep = strategy.postflop_pressure_ranges(100, 500)
+        self.assertEqual(deep["low"], (25.0, 33.0))
+        self.assertEqual(deep["medium"], (50.0, 67.0))
+        self.assertEqual(deep["high"], (75.0, 100.0))
+        self.assertEqual(deep["allin"], (500.0, 500.0))
+
+        shallow = strategy.postflop_pressure_ranges(10, 3)
+        self.assertEqual(shallow["low"], (2.5, 2.9))
+        self.assertIsNone(shallow["medium"])
+        self.assertIsNone(shallow["high"])
+        self.assertEqual(shallow["allin"], (3.0, 3.0))
 
     def test_postflop_pressure_bands(self):
         base = dict(
@@ -141,7 +147,7 @@ class StrategyTest(unittest.TestCase):
         )
         low = review(**base, bet_pressure="low")
         self.assertEqual(low["action"], "CALL")
-        self.assertAlmostEqual(low["call_bb"], 6.5)
+        self.assertAlmostEqual(low["call_bb"], 1.74)
 
         shove = review(**base, bet_pressure="allin")
         self.assertEqual(shove["call_bb"], 40.0)
