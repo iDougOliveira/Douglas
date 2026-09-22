@@ -181,3 +181,10 @@ select[name="opener_position"] option{background:#0d1e18}
   .poker-table .seat b{font-size:11px}
   .poker-table .seat .avatar{font-size:8px}
 }
+
+
+/* V3.3 — telemetria numérica PokerVision */
+.vision-numbers{margin:-4px 0 10px;padding:8px 10px;border:1px dashed var(--line);border-radius:9px;color:var(--muted);font-size:12px;background:#081711}
+.vision-numbers.ready{border-style:solid;border-color:#247d5c;color:#8ff0c7;background:#0b2018}
+.coverage-warning{margin:8px 0 12px;padding:10px 12px;border:1px solid #c38b2f;border-radius:10px;background:#2a210d;color:#ffd889;font-weight:800}
+.decision.sem-cobertura{background:#5d4516!important;color:#ffe2a3!important;border-color:#c38b2f!important}
