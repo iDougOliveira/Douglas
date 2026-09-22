@@ -360,7 +360,7 @@ function resetPostAction(){
   f.bet_pressure.value='none';
   f.call_bb.value=0;
   $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
-  $$$('.post-state').forEach(x=>{
+  $('.post-state').forEach(x=>{
     x.classList.toggle('active',x.dataset.value==='checked_to_hero');
   });
   if($('#betPressure')) $('#betPressure').hidden=true;
@@ -374,9 +374,9 @@ function resetPreflopAction(){
   if($('#preflopPressure')) $('#preflopPressure').hidden=true;
 }
 
-$$$('.post-state').forEach(b=>b.onclick=()=>{
+$('.post-state').forEach(b=>b.onclick=()=>{
   const f=$('#reviewForm').elements;
-  $$$('.post-state').forEach(x=>x.classList.remove('active'));
+  $('.post-state').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.post_action.value=b.dataset.value;
   if(b.dataset.value==='checked_to_hero'){
