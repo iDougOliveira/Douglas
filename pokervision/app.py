@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_blinds, read_number_list, read_single_number
 
 
-APP_VERSION = "0.5.0"
+APP_VERSION = "0.5.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -97,6 +97,7 @@ def _bridge_publish_numeric(data: dict) -> None:
         "hero_stack_chips",
         "hero_stack_bb",
         "table_stacks",
+        "table_stacks_bb",
         "effective_stack_bb",
         "pot_chips",
         "pot_bb",
@@ -947,17 +948,26 @@ class PokerVisionApp:
                 if regions.get("hero_stack"):
                     hero_read = read_single_number(grab_box(regions["hero_stack"]))
                     result["hero_text"] = hero_read["text"]
-                    result["hero_stack_chips"] = hero_read["value"]
+                    if hero_read.get("unit") == "bb":
+                        result["hero_stack_bb"] = hero_read["value"]
+                    else:
+                        result["hero_stack_chips"] = hero_read["value"]
 
                 if regions.get("table_stacks"):
                     table_read = read_number_list(grab_box(regions["table_stacks"]))
                     result["table_text"] = table_read["text"]
-                    result["table_stacks"] = table_read["values"]
+                    if table_read.get("unit") == "bb":
+                        result["table_stacks_bb"] = table_read["values"]
+                    else:
+                        result["table_stacks"] = table_read["values"]
 
                 if regions.get("pot"):
                     pot_read = read_single_number(grab_box(regions["pot"]))
                     result["pot_text"] = pot_read["text"]
-                    result["pot_chips"] = pot_read["value"]
+                    if pot_read.get("unit") == "bb":
+                        result["pot_bb"] = pot_read["value"]
+                    else:
+                        result["pot_chips"] = pot_read["value"]
 
                 big = (result.get("blinds") or {}).get("big")
                 hero = result.get("hero_stack_chips")
@@ -965,16 +975,25 @@ class PokerVisionApp:
                 pot = result.get("pot_chips")
 
                 if big and big > 0:
-                    if hero is not None:
+                    if result.get("hero_stack_bb") is None and hero is not None:
                         result["hero_stack_bb"] = round(hero / big, 2)
-                    if pot is not None:
+                    if result.get("pot_bb") is None and pot is not None:
                         result["pot_bb"] = round(pot / big, 2)
-                    if hero is not None and stacks:
-                        deepest_opponent = max(stacks)
-                        result["effective_stack_bb"] = round(
-                            min(hero, deepest_opponent) / big,
-                            2,
-                        )
+
+                hero_bb = result.get("hero_stack_bb")
+                stacks_bb = result.get("table_stacks_bb") or []
+                if hero_bb is not None and stacks_bb:
+                    # For the captured opponents, effective depth cannot exceed
+                    # the hero stack. Keep raw table stack BB values as well.
+                    result["effective_stack_bb"] = round(
+                        min(hero_bb, max(stacks_bb)),
+                        2,
+                    )
+                elif big and big > 0 and hero is not None and stacks:
+                    result["effective_stack_bb"] = round(
+                        min(hero, max(stacks)) / big,
+                        2,
+                    )
         except Exception as exc:
             result = {"error": str(exc)}
         finally:
