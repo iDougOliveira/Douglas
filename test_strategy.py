@@ -119,6 +119,19 @@ class StrategyTest(unittest.TestCase):
         )
         self.assertEqual(r["action"], "FOLD")
 
+    def test_dynamic_pressure_ranges(self):
+        r10 = strategy.pressure_ranges(10)
+        self.assertEqual(r10["low"], (1.0, 3.0))
+        self.assertEqual(r10["medium"], (3.0, 6.0))
+        self.assertEqual(r10["high"], (6.0, 10.0))
+        self.assertEqual(r10["allin"], (10.0, 10.0))
+
+        r500 = strategy.pressure_ranges(500)
+        self.assertEqual(r500["low"], (1.0, 30.0))
+        self.assertEqual(r500["medium"], (30.0, 100.0))
+        self.assertEqual(r500["high"], (100.0, 500.0))
+        self.assertEqual(r500["allin"], (500.0, 500.0))
+
     def test_postflop_pressure_bands(self):
         base = dict(
             card1="As", card2="Qh", street="flop",
