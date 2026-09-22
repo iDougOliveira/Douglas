@@ -234,12 +234,31 @@ $$('.action-choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.post-action').forEach(b=>b.onclick=()=>{
-  $$('.post-action').forEach(x=>x.classList.remove('active'));
-  b.classList.add('active');
-  $('#reviewForm').elements.post_action.value=b.dataset.value;
+const betToggle=$('#betToggle');
+if(betToggle) betToggle.onclick=()=>{
+  const f=$('#reviewForm').elements;
+  const betting=f.post_action.value!=='facing_bet';
+  f.post_action.value=betting?'facing_bet':'checked_to_hero';
+  if(!betting){
+    f.bet_pressure.value='none';
+    $('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  }
+  betToggle.classList.toggle('active',betting);
+  $('#betPressure').hidden=!betting;
   invalidateReview();
   syncContext();
+  scheduleAnalysis();
+};
+
+$('.pressure-choice').forEach(b=>b.onclick=()=>{
+  const f=$('#reviewForm').elements;
+  $('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  f.post_action.value='facing_bet';
+  f.bet_pressure.value=b.dataset.value;
+  if(betToggle) betToggle.classList.add('active');
+  $('#betPressure').hidden=false;
+  invalidateReview();
   scheduleAnalysis();
 });
 
@@ -296,13 +315,14 @@ function syncContext(){
   $('#postflopContext').hidden=!postflop;
 
   toggleInputs('#raiseInputs',!postflop && f.situation.value==='facing_raise');
-  toggleInputs('#tournamentContext',f.mode.value==='tournament');
 
   const facingBet=postflop && f.post_action.value==='facing_bet';
-  const call=$('#callAmount');
-  call.hidden=!facingBet;
-  f.call_bb.disabled=!facingBet;
-  if(!facingBet) f.call_bb.value=0;
+  if($('#betPressure')) $('#betPressure').hidden=!facingBet;
+  if($('#betToggle')) $('#betToggle').classList.toggle('active',facingBet);
+  if(!facingBet){
+    f.bet_pressure.value='none';
+    f.call_bb.value=0;
+  }
 
   if(!positionOrder[playerCount]) return;
   const positions=positionOrder[playerCount];
@@ -335,7 +355,7 @@ $('#reviewForm').addEventListener('change',e=>{
   scheduleAnalysis();
 });
 
-$('#advancedToggle').onclick=()=>{
+if($('#advancedToggle')) $('#advancedToggle').onclick=()=>{
   const a=$('#advanced');
   a.hidden=!a.hidden;
   $('#advancedToggle span').textContent=a.hidden?'⌄':'⌃';
@@ -478,30 +498,17 @@ function applyVisionNumericState(state){
   if(!visionEnabled || !state?.running) return;
 
   const f=$('#reviewForm').elements;
-  const bb=Number(state?.blinds?.big||0);
-  const sb=Number(state?.blinds?.small||0);
-  const ante=Number(state?.ante||0);
   const heroBB=Number(state?.hero_stack_bb||0);
-  const effectiveBB=Number(state?.effective_stack_bb||0);
   const potBB=Number(state?.pot_bb||0);
-  const playerCount=Number(f.player_count.value||0);
-
-  const signature=JSON.stringify([
-    sb||null,bb||null,ante||null,heroBB||null,effectiveBB||null,potBB||null,playerCount
-  ]);
+  const signature=JSON.stringify([heroBB||null,potBB||null]);
 
   const metrics=[];
-  if(bb>0){
-    metrics.push(`Blinds ${Number(sb).toLocaleString('pt-BR')}/${Number(bb).toLocaleString('pt-BR')}`);
-  }
-  if(ante>0) metrics.push(`Ante ${Number(ante).toLocaleString('pt-BR')}`);
-  if(heroBB>0) metrics.push(`Meu stack ${heroBB.toFixed(2)} BB`);
-  if(effectiveBB>0) metrics.push(`Efetivo ${effectiveBB.toFixed(2)} BB`);
+  if(heroBB>0) metrics.push(`Meu stack ${heroBB.toFixed(1)} BB`);
   if(potBB>0) metrics.push(`Pote ${potBB.toFixed(2)} BB`);
 
   const meter=$('#visionNumbers');
   if(meter){
-    meter.textContent=metrics.length?metrics.join(' · '):'Aguardando leitura de blinds/stack/pote…';
+    meter.textContent=metrics.length?metrics.join(' · '):'Aguardando MEU STACK e POTE…';
     meter.classList.toggle('ready',metrics.length>0);
   }
 
@@ -509,25 +516,17 @@ function applyVisionNumericState(state){
   visionLastNumericSignature=signature;
 
   let changed=false;
-  const stackValue=effectiveBB>0?effectiveBB:heroBB;
-  if(stackValue>0 && Math.abs(Number(f.stack_bb.value||0)-stackValue)>0.01){
-    f.stack_bb.value=stackValue.toFixed(2);
+  if(heroBB>0 && Math.abs(Number(f.stack_bb.value||0)-heroBB)>0.01){
+    f.stack_bb.value=heroBB.toFixed(2);
     changed=true;
   }
   if(potBB>0 && Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
     f.pot_bb.value=potBB.toFixed(2);
     changed=true;
   }
-  if(bb>0 && ante>=0 && playerCount>0){
-    const totalAnteBB=(ante*playerCount)/bb;
-    if(Math.abs(Number(f.ante_bb.value||0)-totalAnteBB)>0.01){
-      f.ante_bb.value=totalAnteBB.toFixed(2);
-      changed=true;
-    }
-  }
 
   if(changed){
-    invalidateReview('PokerVision: BB/stack/pote atualizados');
+    invalidateReview('PokerVision: stack/pote atualizados');
     syncContext();
     scheduleAnalysis();
   }
@@ -640,9 +639,9 @@ function readiness(){
   if(f.street.value==='preflop'&&f.situation.value==='facing_raise'&&!f.opener_position.value)
     return 'Selecione quem fez o primeiro aumento.';
   if(f.street.value!=='preflop'){
-    if(Number(f.pot_bb.value)<=0) return 'Informe o pote atual.';
-    if(f.post_action.value==='facing_bet'&&Number(f.call_bb.value)<=0)
-      return 'Informe quanto falta pagar.';
+    if(Number(f.pot_bb.value)<=0) return 'Aguardando leitura do pote.';
+    if(f.post_action.value==='facing_bet'&&(!f.bet_pressure.value||f.bet_pressure.value==='none'))
+      return 'Escolha BAIXA, MÉDIA, ALTA ou ALL-IN.';
   }
   return '';
 }
@@ -651,8 +650,9 @@ function buildPayload(){
   const f=$('#reviewForm').elements;
   const data=formData($('#reviewForm'));
   data.completed_hand=true;
-  data.icm_pressure=f.icm_context?.value==='pressure';
-  data.call_bb=f.post_action?.value==='facing_bet'?Number(f.call_bb.value||0):0;
+  data.icm_pressure=false;
+  data.call_bb=0;
+  data.bet_pressure=f.post_action?.value==='facing_bet'?(f.bet_pressure.value||'none'):'none';
   data.record_review=false;
   return data;
 }
