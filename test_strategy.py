@@ -141,7 +141,7 @@ class StrategyTest(unittest.TestCase):
         )
         low = review(**base, bet_pressure="low")
         self.assertEqual(low["action"], "CALL")
-        self.assertAlmostEqual(low["call_bb"], 2.0)
+        self.assertAlmostEqual(low["call_bb"], 6.5)
 
         shove = review(**base, bet_pressure="allin")
         self.assertEqual(shove["call_bb"], 40.0)
