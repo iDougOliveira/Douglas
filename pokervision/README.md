@@ -136,3 +136,11 @@ A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento d
 - Regiões com proporção incompatível com uma carta são descartadas.
 - Em leitura incerta, a interface mostra quantas regiões foram detectadas e quantas cartas foram reconhecidas.
 - As coordenadas já calibradas continuam válidas.
+
+
+## V0.6.5 — restauração do reconhecedor estável
+
+- O reconhecedor de mão/board foi restaurado para a versão previamente validada.
+- Removidos os filtros agressivos da V0.6.4 que causavam SEM CARTAS e reconhecimento parcial.
+- Mantidas as melhorias de velocidade da V0.6.3: captura 100 ms, confirmação imediata de leitura válida e envio 100 ms.
+- Mantido o diagnóstico de leitura incerta na interface.
