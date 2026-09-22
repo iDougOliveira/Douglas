@@ -109,7 +109,7 @@ function updatePressureLabels(){
   if(!f) return;
   const stack=Number(f.stack_bb.value||0);
 
-  $('.pressure-choice,.pre-pressure-choice').forEach(button=>{
+  $$('.pressure-choice,.pre-pressure-choice').forEach(button=>{
     const kind=button.dataset.value;
     const small=button.querySelector('small');
     if(small) small.textContent=pressureRangeLabel(kind,stack);
