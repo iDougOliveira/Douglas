@@ -59,6 +59,26 @@ def optional_nonnegative_number(value: object) -> float | None:
     return number
 
 
+def optional_int_range(
+    value: object,
+    minimum: int,
+    maximum: int,
+    label: str,
+) -> int | None:
+    if value is None or value == "":
+        return None
+    if isinstance(value, bool):
+        raise ValueError(f"{label} inválido.")
+    try:
+        number = int(value)
+        numeric = float(value)
+    except (TypeError, ValueError):
+        raise ValueError(f"{label} inválido.")
+    if number != numeric or not minimum <= number <= maximum:
+        raise ValueError(f"{label} inválido.")
+    return number
+
+
 def normalize_vision_payload(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Estado visual inválido.")
@@ -126,6 +146,18 @@ def normalize_vision_payload(data: dict) -> dict:
         "effective_stack_bb": optional_nonnegative_number(data.get("effective_stack_bb")),
         "pot_chips": optional_nonnegative_number(data.get("pot_chips")),
         "pot_bb": optional_nonnegative_number(data.get("pot_bb")),
+        "detected_player_count": optional_int_range(
+            data.get("detected_player_count"), 2, 10, "Quantidade visual de jogadores"
+        ),
+        "inactive_seats": optional_int_range(
+            data.get("inactive_seats"), 0, 10, "Quantidade de assentos inativos"
+        ),
+        "table_max_seats": optional_int_range(
+            data.get("table_max_seats"), 2, 10, "Máximo visual de lugares"
+        ),
+        "table_scan_confidence": str(
+            data.get("table_scan_confidence", "")
+        )[:20],
         "updated_at": float(data.get("updated_at", 0) or 0),
     }
 
