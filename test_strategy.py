@@ -103,6 +103,20 @@ class StrategyTest(unittest.TestCase):
         )
         self.assertEqual(r["action"], "FOLD")
 
+    def test_postflop_pressure_bands(self):
+        base = dict(
+            card1="As", card2="Qh", street="flop",
+            flop1="Ah", flop2="7d", flop3="2c",
+            pot_bb=6, call_bb=0, stack_bb=40
+        )
+        low = review(**base, bet_pressure="low")
+        self.assertEqual(low["action"], "CALL")
+        self.assertAlmostEqual(low["call_bb"], 2.0)
+
+        shove = review(**base, bet_pressure="allin")
+        self.assertEqual(shove["call_bb"], 40.0)
+        self.assertEqual(shove["bet_pressure"], "allin")
+
     def test_turn_and_river_require_board(self):
         r = review(
             card1="As", card2="Qh", street="turn",
