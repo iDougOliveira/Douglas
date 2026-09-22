@@ -47,7 +47,23 @@ let activeCardSlot='card1';
 let visionEnabled=true;
 let visionTimer=null;
 let visionLastSignature='';
+let visionLastNumericSignature='';
 const VISION_URL='/api/vision/state';
+
+const ACTION_LABELS={
+  'FOLD':'DESISTIR',
+  'CHECK':'PASSAR',
+  'CALL':'PAGAR',
+  'BET':'APOSTAR',
+  'RAISE':'AUMENTAR',
+  'ALL-IN':'ALL-IN',
+  'SEM AÇÃO':'SEM AÇÃO',
+  'SEM COBERTURA':'SEM COBERTURA'
+};
+
+function actionLabel(action){
+  return ACTION_LABELS[action]||action||'';
+}
 
 const boardFields=['flop1','flop2','flop3','turn','river'];
 const suitData=[
@@ -458,6 +474,65 @@ function setVisionEnabled(enabled){
   if(!visionEnabled) setVisionBar('paused','Leitura visual pausada · seleção manual ativa');
 }
 
+function applyVisionNumericState(state){
+  if(!visionEnabled || !state?.running) return;
+
+  const f=$('#reviewForm').elements;
+  const bb=Number(state?.blinds?.big||0);
+  const sb=Number(state?.blinds?.small||0);
+  const ante=Number(state?.ante||0);
+  const heroBB=Number(state?.hero_stack_bb||0);
+  const effectiveBB=Number(state?.effective_stack_bb||0);
+  const potBB=Number(state?.pot_bb||0);
+  const playerCount=Number(f.player_count.value||0);
+
+  const signature=JSON.stringify([
+    sb||null,bb||null,ante||null,heroBB||null,effectiveBB||null,potBB||null,playerCount
+  ]);
+
+  const metrics=[];
+  if(bb>0){
+    metrics.push(`Blinds ${Number(sb).toLocaleString('pt-BR')}/${Number(bb).toLocaleString('pt-BR')}`);
+  }
+  if(ante>0) metrics.push(`Ante ${Number(ante).toLocaleString('pt-BR')}`);
+  if(heroBB>0) metrics.push(`Meu stack ${heroBB.toFixed(2)} BB`);
+  if(effectiveBB>0) metrics.push(`Efetivo ${effectiveBB.toFixed(2)} BB`);
+  if(potBB>0) metrics.push(`Pote ${potBB.toFixed(2)} BB`);
+
+  const meter=$('#visionNumbers');
+  if(meter){
+    meter.textContent=metrics.length?metrics.join(' · '):'Aguardando leitura de blinds/stack/pote…';
+    meter.classList.toggle('ready',metrics.length>0);
+  }
+
+  if(signature===visionLastNumericSignature) return;
+  visionLastNumericSignature=signature;
+
+  let changed=false;
+  const stackValue=effectiveBB>0?effectiveBB:heroBB;
+  if(stackValue>0 && Math.abs(Number(f.stack_bb.value||0)-stackValue)>0.01){
+    f.stack_bb.value=stackValue.toFixed(2);
+    changed=true;
+  }
+  if(potBB>0 && Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
+    f.pot_bb.value=potBB.toFixed(2);
+    changed=true;
+  }
+  if(bb>0 && ante>=0 && playerCount>0){
+    const totalAnteBB=(ante*playerCount)/bb;
+    if(Math.abs(Number(f.ante_bb.value||0)-totalAnteBB)>0.01){
+      f.ante_bb.value=totalAnteBB.toFixed(2);
+      changed=true;
+    }
+  }
+
+  if(changed){
+    invalidateReview('PokerVision: BB/stack/pote atualizados');
+    syncContext();
+    scheduleAnalysis();
+  }
+}
+
 function applyVisionState(state){
   if(!visionEnabled || !state?.running || !state?.confirmed) return;
 
@@ -514,6 +589,10 @@ async function pollPokerVision(){
     clearTimeout(timeout);
     if(!response.ok) throw new Error('bridge indisponível');
     const state=await response.json();
+
+    if(state.connected && state.running && visionEnabled){
+      applyVisionNumericState(state);
+    }
 
     if(!state.connected){
       setVisionBar('disconnected','PokerVision ainda não enviou dados ao Beelink');
@@ -597,8 +676,11 @@ function renderResult(r){
 
   const board=r.board_text? `<p class="board-result"><b>Board:</b> ${escapeHTML(r.board_text)} · ${escapeHTML(r.hand_class||'')} · ${escapeHTML(r.board_texture||'')}</p>`:'';
   const bet=r.bet_bb!=null?` · <b>${Number(r.bet_bb).toFixed(2)} BB</b>`:'';
+  const label=actionLabel(r.action);
+  const uncovered=r.action==='SEM COBERTURA';
   box.innerHTML=`
-    <div class="decision ${escapeHTML(String(r.action).toLowerCase().replaceAll(' ','-'))}">${escapeHTML(r.action)}</div>
+    <div class="decision ${escapeHTML(String(r.action).toLowerCase().replaceAll(' ','-'))}">${escapeHTML(label)}</div>
+    ${uncovered?'<div class="coverage-warning">O motor ainda não possui range suficiente para transformar este cenário em DESISTIR / PAGAR / AUMENTAR sem inventar uma estratégia.</div>':''}
     <h2>${escapeHTML(r.hand)} · ${escapeHTML(r.sizing)}${bet}</h2>
     ${board}
     <p><b>${escapeHTML(r.profile)}</b></p>
@@ -608,7 +690,7 @@ function renderResult(r){
     <p class="source-links">${sources}</p>
     <small>${escapeHTML(r.disclaimer)}</small>`;
   box.hidden=false;
-  $('#autoStatus').innerHTML=`Decisão atual: <b>${escapeHTML(r.action)}</b>`;
+  $('#autoStatus').innerHTML=`Decisão atual: <b>${escapeHTML(actionLabel(r.action))}</b>`;
 }
 
 async function runAnalysis(scroll=false){
