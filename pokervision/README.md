@@ -91,3 +91,20 @@ O relay já está preparado para transportar:
 - pote em fichas e em BB.
 
 Nesta versão, essas quatro regiões são apenas de calibração e captura de amostras. O OCR numérico será ativado após validar os recortes reais do replay.
+
+
+## V0.5.0 — OCR numérico e conversão para BB
+
+As regiões calibradas em V0.4 passam a ser lidas por OCR:
+
+- BLINDS / ANTE;
+- MEU STACK;
+- STACKS DA MESA;
+- POTE.
+
+Conversões automáticas:
+- stack do hero em BB = fichas do hero / big blind;
+- pote em BB = fichas do pote / big blind;
+- stack efetivo = min(stack do hero, maior stack adversário detectado) / big blind.
+
+A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento de cartas continua independente do Tesseract.
