@@ -89,6 +89,17 @@ def normalize_vision_payload(data: dict) -> dict:
         if value is not None and value != ""
     ]
 
+    table_stacks_bb = data.get("table_stacks_bb", [])
+    if table_stacks_bb is None:
+        table_stacks_bb = []
+    if not isinstance(table_stacks_bb, list) or len(table_stacks_bb) > 10:
+        raise ValueError("Stacks BB da mesa inválidos.")
+    clean_stacks_bb = [
+        optional_nonnegative_number(value)
+        for value in table_stacks_bb
+        if value is not None and value != ""
+    ]
+
     blinds = data.get("blinds")
     clean_blinds = None
     if blinds is not None:
@@ -111,11 +122,7 @@ def normalize_vision_payload(data: dict) -> dict:
         "hero_stack_chips": optional_nonnegative_number(data.get("hero_stack_chips")),
         "hero_stack_bb": optional_nonnegative_number(data.get("hero_stack_bb")),
         "table_stacks": clean_stacks,
-        "table_stacks_bb": [
-            optional_nonnegative_number(value)
-            for value in (data.get("table_stacks_bb") or [])
-            if value is not None and value != ""
-        ],
+        "table_stacks_bb": clean_stacks_bb,
         "effective_stack_bb": optional_nonnegative_number(data.get("effective_stack_bb")),
         "pot_chips": optional_nonnegative_number(data.get("pot_chips")),
         "pot_bb": optional_nonnegative_number(data.get("pot_bb")),
