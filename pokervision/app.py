@@ -19,10 +19,10 @@ import mss
 from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
-from numeric_ocr import OCR_ERROR, read_blinds, read_number_list, read_single_number
+from numeric_ocr import OCR_ERROR, read_single_number
 
 
-APP_VERSION = "0.5.2"
+APP_VERSION = "0.6.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -309,9 +309,7 @@ def capture_dir() -> Path:
 CALIBRATION_KEYS = (
     "hand",
     "board",
-    "blinds",
     "hero_stack",
-    "table_stacks",
     "pot",
 )
 
@@ -603,13 +601,11 @@ class PokerVisionApp:
         finance_actions.pack(fill="x", pady=(0, 14))
         ttk.Label(
             finance_actions,
-            text="Calibração numérica:",
+            text="Automação numérica:",
             style="Muted.TLabel",
         ).pack(side="left", padx=(0, 8))
         for key, label in (
-            ("blinds", "BLINDS / ANTE"),
             ("hero_stack", "MEU STACK"),
-            ("table_stacks", "STACKS DA MESA"),
             ("pot", "POTE"),
         ):
             ttk.Button(
@@ -624,12 +620,8 @@ class PokerVisionApp:
         self.hand_coords.pack(anchor="w")
         self.board_coords = ttk.Label(coords, text="")
         self.board_coords.pack(anchor="w", pady=(4, 0))
-        self.blinds_coords = ttk.Label(coords, text="")
-        self.blinds_coords.pack(anchor="w", pady=(4, 0))
         self.hero_stack_coords = ttk.Label(coords, text="")
         self.hero_stack_coords.pack(anchor="w", pady=(4, 0))
-        self.table_stacks_coords = ttk.Label(coords, text="")
-        self.table_stacks_coords.pack(anchor="w", pady=(4, 0))
         self.pot_coords = ttk.Label(coords, text="")
         self.pot_coords.pack(anchor="w", pady=(4, 0))
         self.numeric_readout = ttk.Label(
@@ -730,10 +722,8 @@ class PokerVisionApp:
         labels = {
             "hand": "SUAS DUAS CARTAS",
             "board": "FLOP / TURN / RIVER",
-            "blinds": "BLINDS / ANTE",
-            "hero_stack": "SEU STACK",
-            "table_stacks": "TODOS OS STACKS DA MESA",
-            "pot": "POTE",
+            "hero_stack": "SEU STACK EM BB",
+            "pot": "POTE EM BB",
         }
         label = labels.get(key, key.upper())
         self.stop()
@@ -768,22 +758,16 @@ class PokerVisionApp:
         self.board_coords.configure(
             text=self.format_region("BOARD", self.config["board"])
         )
-        self.blinds_coords.configure(
-            text=self.format_region("BLINDS/ANTE", self.config["blinds"])
-        )
         self.hero_stack_coords.configure(
             text=self.format_region("MEU STACK", self.config["hero_stack"])
-        )
-        self.table_stacks_coords.configure(
-            text=self.format_region("STACKS DA MESA", self.config["table_stacks"])
         )
         self.pot_coords.configure(
             text=self.format_region("POTE", self.config["pot"])
         )
         if self.config["hand"] and self.config["board"]:
-            extras = sum(bool(self.config[key]) for key in ("blinds", "hero_stack", "table_stacks", "pot"))
+            extras = sum(bool(self.config[key]) for key in ("hero_stack", "pot"))
             self.status.configure(
-                text=f"Cartas prontas · calibrações numéricas: {extras}/4 configuradas."
+                text=f"Cartas prontas · automação stack/pote: {extras}/2 configurada(s)."
             )
         else:
             self.status.configure(text="Configure as duas regiões.")
@@ -926,16 +910,11 @@ class PokerVisionApp:
         return None if value is None else round(float(value), 4)
 
     def _numeric_signature(self, data: dict) -> tuple:
-        blinds = data.get("blinds") or {}
         return (
-            self._round_value(blinds.get("small")),
-            self._round_value(blinds.get("big")),
-            self._round_value(data.get("ante")),
-            self._round_value(data.get("hero_stack_chips")),
-            tuple(self._round_value(v) for v in data.get("table_stacks", [])),
-            tuple(self._round_value(v) for v in data.get("table_stacks_bb", [])),
-            self._round_value(data.get("pot_chips")),
+            self._round_value(data.get("hero_stack_bb")),
             self._round_value(data.get("pot_bb")),
+            self._round_value(data.get("hero_stack_chips")),
+            self._round_value(data.get("pot_chips")),
         )
 
     def _numeric_worker(self, regions: dict) -> None:
@@ -944,15 +923,6 @@ class PokerVisionApp:
             if OCR_ERROR:
                 result["error"] = OCR_ERROR
             else:
-                if regions.get("blinds"):
-                    blind_read = read_blinds(grab_box(regions["blinds"]))
-                    result["blinds_text"] = blind_read["text"]
-                    result["blinds"] = {
-                        "small": blind_read["small"],
-                        "big": blind_read["big"],
-                    }
-                    result["ante"] = blind_read["ante"]
-
                 if regions.get("hero_stack"):
                     hero_read = read_single_number(grab_box(regions["hero_stack"]))
                     result["hero_text"] = hero_read["text"]
@@ -961,14 +931,6 @@ class PokerVisionApp:
                     else:
                         result["hero_stack_chips"] = hero_read["value"]
 
-                if regions.get("table_stacks"):
-                    table_read = read_number_list(grab_box(regions["table_stacks"]))
-                    result["table_text"] = table_read["text"]
-                    if table_read.get("unit") == "bb":
-                        result["table_stacks_bb"] = table_read["values"]
-                    else:
-                        result["table_stacks"] = table_read["values"]
-
                 if regions.get("pot"):
                     pot_read = read_single_number(grab_box(regions["pot"]))
                     result["pot_text"] = pot_read["text"]
@@ -976,32 +938,6 @@ class PokerVisionApp:
                         result["pot_bb"] = pot_read["value"]
                     else:
                         result["pot_chips"] = pot_read["value"]
-
-                big = (result.get("blinds") or {}).get("big")
-                hero = result.get("hero_stack_chips")
-                stacks = result.get("table_stacks") or []
-                pot = result.get("pot_chips")
-
-                if big and big > 0:
-                    if result.get("hero_stack_bb") is None and hero is not None:
-                        result["hero_stack_bb"] = round(hero / big, 2)
-                    if result.get("pot_bb") is None and pot is not None:
-                        result["pot_bb"] = round(pot / big, 2)
-
-                hero_bb = result.get("hero_stack_bb")
-                stacks_bb = result.get("table_stacks_bb") or []
-                if hero_bb is not None and stacks_bb:
-                    # For the captured opponents, effective depth cannot exceed
-                    # the hero stack. Keep raw table stack BB values as well.
-                    result["effective_stack_bb"] = round(
-                        min(hero_bb, max(stacks_bb)),
-                        2,
-                    )
-                elif big and big > 0 and hero is not None and stacks:
-                    result["effective_stack_bb"] = round(
-                        min(hero, max(stacks)) / big,
-                        2,
-                    )
         except Exception as exc:
             result = {"error": str(exc)}
         finally:
@@ -1018,7 +954,7 @@ class PokerVisionApp:
 
         regions = {
             key: self.config.get(key)
-            for key in ("blinds", "hero_stack", "table_stacks", "pot")
+            for key in ("hero_stack", "pot")
         }
         if not any(regions.values()):
             return
@@ -1043,33 +979,20 @@ class PokerVisionApp:
             )
             return
 
-        blinds = data.get("blinds") or {}
-        small = blinds.get("small")
-        big = blinds.get("big")
         hero_bb = data.get("hero_stack_bb")
-        eff_bb = data.get("effective_stack_bb")
         pot_bb = data.get("pot_bb")
-        ante = data.get("ante")
-
         parts = []
-        if small is not None and big is not None:
-            parts.append(f"BLINDS {small:g}/{big:g}")
-        if ante is not None:
-            parts.append(f"ANTE {ante:g}")
         if hero_bb is not None:
             parts.append(f"MEU STACK {hero_bb:g} BB")
-        if eff_bb is not None:
-            parts.append(f"EFETIVO {eff_bb:g} BB")
         if pot_bb is not None:
             parts.append(f"POTE {pot_bb:g} BB")
         self.numeric_readout.configure(
-            text="OCR NUMÉRICO: " + (" · ".join(parts) if parts else "sem leitura estável")
+            text="OCR NUMÉRICO: " + (" · ".join(parts) if parts else "sem leitura BB estável")
         )
+
         raw_parts = []
         for label, key in (
-            ("BLINDS", "blinds_text"),
             ("MEU STACK", "hero_text"),
-            ("MESA", "table_text"),
             ("POTE", "pot_text"),
         ):
             raw = str(data.get(key, "")).strip()
@@ -1081,10 +1004,7 @@ class PokerVisionApp:
 
         signature = self._numeric_signature(data)
         self.numeric_tracker.observe(signature)
-        if (
-            self.numeric_tracker.ready
-            and self.numeric_tracker.stable == signature
-        ):
+        if self.numeric_tracker.ready and self.numeric_tracker.stable == signature:
             _bridge_publish_numeric(data)
 
     def preview_once(self) -> None:
@@ -1164,7 +1084,7 @@ class PokerVisionApp:
         try:
             grab_box(self.config["hand"]).save(folder / f"{stamp}_hand.png")
             grab_box(self.config["board"]).save(folder / f"{stamp}_board.png")
-            for key in ("blinds", "hero_stack", "table_stacks", "pot"):
+            for key in ("hero_stack", "pot"):
                 region = self.config.get(key)
                 if region:
                     grab_box(region).save(folder / f"{stamp}_{key}.png")
