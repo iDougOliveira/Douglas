@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.1.0"
+ENGINE_VERSION = "3.7.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -15,6 +15,8 @@ SOURCES = {
     "texture": {"title": "Upswing — fundamentos de textura de flop", "url": "https://upswingpoker.com/board-texture-tips/"},
     "cbet": {"title": "PokerCoaching — fundamentos pós-flop e c-bet", "url": "https://pokercoaching.com/blog/gto-postflop-basics/"},
     "defense": {"title": "PokerCoaching — 3-bet e defesa pré-flop", "url": "https://pokercoaching.com/preflop-charts/"},
+    "bet_sizing": {"title": "PokerCoaching — bet sizing: 25–33%, 50–67%, 75–100% do pote", "url": "https://pokercoaching.com/cheatsheets/"},
+    "spr": {"title": "GTO Wizard — stack-to-pot ratio (SPR)", "url": "https://blog.gtowizard.com/stack-to-pot-ratio/"},
 }
 
 # Factual hand-set data from the public text, not copied chart artwork or solver frequencies.
@@ -213,47 +215,62 @@ def decide(data):
         r["notes"].append(f"{c['hand']} está no conjunto de abertura publicado para {range_pos}.")
     return r
 
-def pressure_ranges(stack):
-    raw = max(0.0, float(stack or 0))
-    if raw <= 0:
-        return {
-            "low": (0.0, 0.0),
-            "medium": (0.0, 0.0),
-            "high": (0.0, 0.0),
-            "allin": (0.0, 0.0),
-        }
+def preflop_pressure_representative(stack, pressure):
+    """Representative observed raise size for the simplified preflop UI.
 
-    whole = abs(raw - round(raw)) < 1e-9 and raw >= 10
-    step = 1.0 if whole else 0.1
-    round_boundary = (
-        (lambda value: float(round(value)))
-        if whole
-        else (lambda value: round(value, 1))
-    )
-    stack = float(round(raw)) if whole else round(raw, 1)
+    Low/medium anchors reflect common published open sizes (2–2.5 BB online,
+    3–4 BB live/SB). 'High' is treated as an out-of-standard large open and
+    represented by 5 BB because the implemented 3-bet guideline only covers
+    opens through 5 BB.
+    """
+    stack = max(0.0, float(stack or 0))
+    values = {"low": 2.25, "medium": 3.5, "high": 5.0, "allin": stack}
+    return min(stack, values.get(pressure, 0.0))
 
-    low_max = round_boundary(min(30.0, stack * 0.30))
-    medium_max = round_boundary(min(100.0, stack * 0.60))
 
-    low_min = min(step, stack)
-    medium_min = min(stack, round_boundary(low_max + step))
-    high_min = min(stack, round_boundary(medium_max + step))
-    high_max = max(high_min, round_boundary(stack - step))
+def postflop_pressure_ranges(pot, stack):
+    """Standard postflop bet-size buckets, expressed in BB.
+
+    Source buckets:
+      low    = 25–33% pot
+      medium = 50–67% pot
+      high   = 75–100% pot
+      allin  = hero remaining stack
+
+    Non-all-in buckets are capped below the hero stack; an impossible bucket
+    returns None.
+    """
+    pot = max(0.0, float(pot or 0))
+    stack = max(0.0, float(stack or 0))
+    if pot <= 0 or stack <= 0:
+        return {"low": None, "medium": None, "high": None, "allin": (stack, stack)}
+
+    step = 0.1
+    def bucket(lo_frac, hi_frac):
+        low = round(pot * lo_frac, 2)
+        high = round(min(pot * hi_frac, stack - step), 2)
+        if low > high or low >= stack:
+            return None
+        return (low, high)
 
     return {
-        "low": (low_min, max(low_min, low_max)),
-        "medium": (medium_min, max(medium_min, medium_max)),
-        "high": (high_min, high_max),
+        "low": bucket(.25, .33),
+        "medium": bucket(.50, .67),
+        "high": bucket(.75, 1.00),
         "allin": (stack, stack),
     }
 
 
-def pressure_representative(stack, pressure):
-    ranges = pressure_ranges(stack)
-    low, high = ranges.get(pressure, (0.0, 0.0))
+def postflop_pressure_representative(pot, stack, pressure):
+    ranges = postflop_pressure_ranges(pot, stack)
+    selected = ranges.get(pressure)
+    if not selected:
+        return 0.0
+    low, high = selected
     if pressure == "allin":
         return high
     return round((low + high) / 2.0, 4)
+
 
 
 def quick_preflop_response(data, c, r):
@@ -283,7 +300,7 @@ def quick_preflop_response(data, c, r):
     if situation != "facing_raise":
         return r
 
-    source(r, "threebet", "rules")
+    source(r, "threebet", "rules", "bet_sizing")
     r["quick_preflop"] = True
     r["bet_pressure"] = pressure
 
@@ -297,7 +314,7 @@ def quick_preflop_response(data, c, r):
     if pressure not in {"low", "medium", "high", "allin"}:
         r["notes"].append("Selecione BAIXO, MÉDIO, ALTO ou ALL-IN para o raise.")
         return r
-    opening = pressure_representative(c["stack"], pressure)
+    opening = preflop_pressure_representative(c["stack"], pressure)
 
     r["open_to_bb"] = opening
     if c["mode"] != "cash" or c["stack"] != 100 or c["ante"]:
@@ -475,7 +492,7 @@ def postflop(data,c,r):
     board = _board(data, street, c["hole"])
     info = _hand_info(c["hole"], board)
     texture = _texture(board)
-    source(r,"odds","texture","cbet")
+    source(r,"odds","texture","cbet","bet_sizing","spr")
     r.update(board=board, board_text=" ".join(board), hand_class=info["label"],
              board_texture=texture["label"], strategy_status="study_heuristic",
              profile="Pós-flop automático · força da mão + textura + pressão/pot odds")
@@ -485,21 +502,44 @@ def postflop(data,c,r):
     pot = number(data,"pot_bb",0,0)
     call = number(data,"call_bb",0,0)
     pressure = str(data.get("bet_pressure", "none")).lower()
-    if call <= 0 and pressure in {"low", "medium", "high", "allin"}:
-        call = pressure_representative(c["stack"], pressure)
-        r["call_bb"] = call
-        r["bet_pressure"] = pressure
-        low, high = pressure_ranges(c["stack"])[pressure]
-        r["notes"].append(
-            f"Pressão selecionada: {pressure.upper()}. "
-            f"Com stack de {c['stack']:g} BB, essa faixa vai de {low:g} a {high:g} BB; "
-            f"o motor usa {call:g} BB como valor representativo."
-        )
-        r["notes"].append(
-            "Esta é uma aproximação para revisão rápida; não representa o tamanho exato da aposta."
-        )
     if pot <= 0:
         raise ValueError("Informe o pote atual para analisar o pós-flop.")
+
+    # Exact SPR requires the effective stack. We only read hero's stack, so this
+    # is deliberately exposed as a hero stack/pot ratio, not as exact SPR.
+    r["hero_stack_pot_ratio"] = round(c["stack"] / pot, 3)
+    r["notes"].append(
+        f"Relação stack/pote do hero: {c['stack']:g}/{pot:g} = "
+        f"{r['hero_stack_pot_ratio']:.2f}. O SPR formal usa stack efetivo; "
+        "sem ler o stack adversário, este valor é apenas contexto de comprometimento."
+    )
+
+    if call <= 0 and pressure in {"low", "medium", "high", "allin"}:
+        ranges = postflop_pressure_ranges(pot, c["stack"])
+        selected = ranges.get(pressure)
+        if not selected:
+            raise ValueError("Essa faixa de aposta excede seu stack; use ALL-IN.")
+        call = postflop_pressure_representative(pot, c["stack"], pressure)
+        r["call_bb"] = call
+        r["bet_pressure"] = pressure
+        low, high = selected
+        pct_low = {"low": 25, "medium": 50, "high": 75, "allin": None}[pressure]
+        pct_high = {"low": 33, "medium": 67, "high": 100, "allin": None}[pressure]
+        if pressure == "allin":
+            r["notes"].append(
+                f"Pressão selecionada: ALL-IN. Continuar exige até {call:g} BB, "
+                "o stack restante informado pelo PokerVision."
+            )
+        else:
+            r["notes"].append(
+                f"Pressão selecionada: {pressure.upper()}. Pela referência de sizing, "
+                f"essa faixa é {pct_low}–{pct_high}% do pote; com pote de {pot:g} BB, "
+                f"equivale a {low:g}–{high:g} BB. O motor usa {call:g} BB como ponto médio."
+            )
+        r["notes"].append(
+            "O ponto médio é uma aproximação operacional para revisão rápida; "
+            "não substitui o tamanho exato da aposta."
+        )
     opponents = int(number(data,"active_opponents",1,1,9))
     if opponents > 1:
         r["notes"].append("Pote multiway: o modo de estudo usa uma linha mais conservadora.")
