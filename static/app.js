@@ -48,6 +48,7 @@ let visionEnabled=true;
 let visionTimer=null;
 let visionLastSignature='';
 let visionLastNumericSignature='';
+let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
 
 const ACTION_LABELS={
@@ -353,21 +354,43 @@ $$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-const betToggle=$('#betToggle');
-if(betToggle) betToggle.onclick=()=>{
+function resetPostAction(){
   const f=$('#reviewForm').elements;
-  const betting=f.post_action.value!=='facing_bet';
-  f.post_action.value=betting?'facing_bet':'checked_to_hero';
-  if(!betting){
+  f.post_action.value='checked_to_hero';
+  f.bet_pressure.value='none';
+  f.call_bb.value=0;
+  $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$('.post-state').forEach(x=>{
+    x.classList.toggle('active',x.dataset.value==='checked_to_hero');
+  });
+  if($('#betPressure')) $('#betPressure').hidden=true;
+}
+
+function resetPreflopAction(){
+  const f=$('#reviewForm').elements;
+  f.situation.value='unopened';
+  f.preflop_pressure.value='none';
+  $$('.pre-action,.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  if($('#preflopPressure')) $('#preflopPressure').hidden=true;
+}
+
+$$('.post-state').forEach(b=>b.onclick=()=>{
+  const f=$('#reviewForm').elements;
+  $$('.post-state').forEach(x=>x.classList.remove('active'));
+  b.classList.add('active');
+  f.post_action.value=b.dataset.value;
+  if(b.dataset.value==='checked_to_hero'){
     f.bet_pressure.value='none';
+    f.call_bb.value=0;
     $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
+    $('#betPressure').hidden=true;
+  }else{
+    $('#betPressure').hidden=false;
   }
-  betToggle.classList.toggle('active',betting);
-  $('#betPressure').hidden=!betting;
   invalidateReview();
   syncContext();
   scheduleAnalysis();
-};
+});
 
 $$('.pressure-choice').forEach(b=>b.onclick=()=>{
   const f=$('#reviewForm').elements;
@@ -375,7 +398,7 @@ $$('.pressure-choice').forEach(b=>b.onclick=()=>{
   b.classList.add('active');
   f.post_action.value='facing_bet';
   f.bet_pressure.value=b.dataset.value;
-  if(betToggle) betToggle.classList.add('active');
+  $('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value==='facing_bet'));
   $('#betPressure').hidden=false;
   invalidateReview();
   scheduleAnalysis();
@@ -411,6 +434,14 @@ function updateStreet(){
   if(n===3) street='flop';
   else if(n===4) street='turn';
   else if(n===5) street='river';
+  if(street!==lastStreet){
+    if(street==='preflop'){
+      resetPostAction();
+    }else{
+      resetPostAction();
+    }
+    lastStreet=street;
+  }
   f.street.value=street;
 
   const labels={preflop:'PRÉ-FLOP',flop:'FLOP',turn:'TURN',river:'RIVER'};
@@ -438,7 +469,7 @@ function syncContext(){
 
   const facingBet=postflop && f.post_action.value==='facing_bet';
   if($('#betPressure')) $('#betPressure').hidden=!facingBet;
-  if($('#betToggle')) $('#betToggle').classList.toggle('active',facingBet);
+  $('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value===f.post_action.value));
   if(!facingBet){
     f.bet_pressure.value='none';
     f.call_bb.value=0;
@@ -664,6 +695,13 @@ function applyVisionState(state){
   visionLastSignature=signature;
 
   const f=$('#reviewForm').elements;
+  const previousHand=[f.card1.value,f.card2.value].filter(Boolean).join('|');
+  const incomingHand=hand.join('|');
+  if(board.length===0 && incomingHand && incomingHand!==previousHand){
+    resetPreflopAction();
+    resetPostAction();
+    lastStreet='preflop';
+  }
   const desired={
     card1:hand[0]||'',
     card2:hand[1]||'',
