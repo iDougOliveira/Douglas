@@ -18,13 +18,25 @@ if not exist ".venv\Scripts\python.exe" (
 
 call ".venv\Scripts\activate.bat"
 
-python -c "import mss, PIL, numpy, cv2" >nul 2>nul
+python -c "import mss, PIL, numpy, cv2, pytesseract" >nul 2>nul
 if errorlevel 1 (
   echo Instalando/atualizando dependencias do PokerVision...
   python -m pip install --upgrade pip
   if errorlevel 1 goto :fail
   pip install -r requirements.txt
   if errorlevel 1 goto :fail
+)
+
+where tesseract >nul 2>nul
+if errorlevel 1 (
+  if not exist "C:\Program Files\Tesseract-OCR\tesseract.exe" (
+    echo.
+    echo AVISO: Tesseract OCR nao encontrado.
+    echo Cartas continuarao funcionando, mas BLINDS/STACK/POTE nao serao lidos.
+    echo Instale uma vez com:
+    echo winget install -e --id UB-Mannheim.TesseractOCR
+    echo.
+  )
 )
 
 python app.py
