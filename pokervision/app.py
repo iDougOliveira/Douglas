@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_blinds, read_number_list, read_single_number
 
 
-APP_VERSION = "0.5.1"
+APP_VERSION = "0.5.2"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -638,6 +638,12 @@ class PokerVisionApp:
             style="Muted.TLabel",
         )
         self.numeric_readout.pack(anchor="w", pady=(7, 0))
+        self.numeric_raw_readout = ttk.Label(
+            coords,
+            text="OCR BRUTO: —",
+            style="Muted.TLabel",
+        )
+        self.numeric_raw_readout.pack(anchor="w", pady=(3, 0))
         self.street_readout = ttk.Label(
             coords,
             text="STREET: —",
@@ -1056,6 +1062,19 @@ class PokerVisionApp:
             parts.append(f"POTE {pot_bb:g} BB")
         self.numeric_readout.configure(
             text="OCR NUMÉRICO: " + (" · ".join(parts) if parts else "sem leitura estável")
+        )
+        raw_parts = []
+        for label, key in (
+            ("BLINDS", "blinds_text"),
+            ("MEU STACK", "hero_text"),
+            ("MESA", "table_text"),
+            ("POTE", "pot_text"),
+        ):
+            raw = str(data.get(key, "")).strip()
+            if raw:
+                raw_parts.append(f"{label}='{raw}'")
+        self.numeric_raw_readout.configure(
+            text="OCR BRUTO: " + (" | ".join(raw_parts) if raw_parts else "—")
         )
 
         signature = self._numeric_signature(data)
