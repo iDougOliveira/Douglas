@@ -241,7 +241,7 @@ if(betToggle) betToggle.onclick=()=>{
   f.post_action.value=betting?'facing_bet':'checked_to_hero';
   if(!betting){
     f.bet_pressure.value='none';
-    $('.pressure-choice').forEach(x=>x.classList.remove('active'));
+    $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
   }
   betToggle.classList.toggle('active',betting);
   $('#betPressure').hidden=!betting;
@@ -250,9 +250,9 @@ if(betToggle) betToggle.onclick=()=>{
   scheduleAnalysis();
 };
 
-$('.pressure-choice').forEach(b=>b.onclick=()=>{
+$$('.pressure-choice').forEach(b=>b.onclick=()=>{
   const f=$('#reviewForm').elements;
-  $('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.post_action.value='facing_bet';
   f.bet_pressure.value=b.dataset.value;
