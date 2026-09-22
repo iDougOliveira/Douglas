@@ -19,9 +19,10 @@ import mss
 from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
+from numeric_ocr import OCR_ERROR, read_blinds, read_number_list, read_single_number
 
 
-APP_VERSION = "0.4.0"
+APP_VERSION = "0.5.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -87,6 +88,24 @@ def _bridge_publish(
 def _bridge_snapshot() -> dict:
     with _BRIDGE_LOCK:
         return dict(_BRIDGE_STATE)
+
+
+def _bridge_publish_numeric(data: dict) -> None:
+    allowed = {
+        "blinds",
+        "ante",
+        "hero_stack_chips",
+        "hero_stack_bb",
+        "table_stacks",
+        "effective_stack_bb",
+        "pot_chips",
+        "pot_bb",
+    }
+    with _BRIDGE_LOCK:
+        for key, value in data.items():
+            if key in allowed and value is not None:
+                _BRIDGE_STATE[key] = value
+        _BRIDGE_STATE["updated_at"] = time.time()
 
 
 def _origin_allowed(origin: str) -> bool:
@@ -467,6 +486,11 @@ class PokerVisionApp:
         self.board_photo: ImageTk.PhotoImage | None = None
         self.hand_tracker = StableReading(confirmations=3)
         self.board_tracker = StableReading(confirmations=3)
+        self.numeric_tracker = StableReading(confirmations=2)
+        self.numeric_lock = threading.Lock()
+        self.numeric_result: dict | None = None
+        self.numeric_pending = False
+        self.last_numeric_scan = 0.0
         _bridge_publish(
             running=False,
             confirmed=False,
@@ -607,6 +631,12 @@ class PokerVisionApp:
         self.table_stacks_coords.pack(anchor="w", pady=(4, 0))
         self.pot_coords = ttk.Label(coords, text="")
         self.pot_coords.pack(anchor="w", pady=(4, 0))
+        self.numeric_readout = ttk.Label(
+            coords,
+            text="OCR NUMÉRICO: aguardando monitoramento",
+            style="Muted.TLabel",
+        )
+        self.numeric_readout.pack(anchor="w", pady=(7, 0))
         self.street_readout = ttk.Label(
             coords,
             text="STREET: —",
@@ -884,6 +914,139 @@ class PokerVisionApp:
             )
         )
 
+    @staticmethod
+    def _round_value(value):
+        return None if value is None else round(float(value), 4)
+
+    def _numeric_signature(self, data: dict) -> tuple:
+        blinds = data.get("blinds") or {}
+        return (
+            self._round_value(blinds.get("small")),
+            self._round_value(blinds.get("big")),
+            self._round_value(data.get("ante")),
+            self._round_value(data.get("hero_stack_chips")),
+            tuple(self._round_value(v) for v in data.get("table_stacks", [])),
+            self._round_value(data.get("pot_chips")),
+        )
+
+    def _numeric_worker(self, regions: dict) -> None:
+        result: dict = {}
+        try:
+            if OCR_ERROR:
+                result["error"] = OCR_ERROR
+            else:
+                if regions.get("blinds"):
+                    blind_read = read_blinds(grab_box(regions["blinds"]))
+                    result["blinds_text"] = blind_read["text"]
+                    result["blinds"] = {
+                        "small": blind_read["small"],
+                        "big": blind_read["big"],
+                    }
+                    result["ante"] = blind_read["ante"]
+
+                if regions.get("hero_stack"):
+                    hero_read = read_single_number(grab_box(regions["hero_stack"]))
+                    result["hero_text"] = hero_read["text"]
+                    result["hero_stack_chips"] = hero_read["value"]
+
+                if regions.get("table_stacks"):
+                    table_read = read_number_list(grab_box(regions["table_stacks"]))
+                    result["table_text"] = table_read["text"]
+                    result["table_stacks"] = table_read["values"]
+
+                if regions.get("pot"):
+                    pot_read = read_single_number(grab_box(regions["pot"]))
+                    result["pot_text"] = pot_read["text"]
+                    result["pot_chips"] = pot_read["value"]
+
+                big = (result.get("blinds") or {}).get("big")
+                hero = result.get("hero_stack_chips")
+                stacks = result.get("table_stacks") or []
+                pot = result.get("pot_chips")
+
+                if big and big > 0:
+                    if hero is not None:
+                        result["hero_stack_bb"] = round(hero / big, 2)
+                    if pot is not None:
+                        result["pot_bb"] = round(pot / big, 2)
+                    if hero is not None and stacks:
+                        deepest_opponent = max(stacks)
+                        result["effective_stack_bb"] = round(
+                            min(hero, deepest_opponent) / big,
+                            2,
+                        )
+        except Exception as exc:
+            result = {"error": str(exc)}
+        finally:
+            with self.numeric_lock:
+                self.numeric_result = result
+                self.numeric_pending = False
+
+    def schedule_numeric_scan(self) -> None:
+        if not self.running or self.numeric_pending:
+            return
+        now = time.time()
+        if now - self.last_numeric_scan < 1.0:
+            return
+
+        regions = {
+            key: self.config.get(key)
+            for key in ("blinds", "hero_stack", "table_stacks", "pot")
+        }
+        if not any(regions.values()):
+            return
+
+        self.last_numeric_scan = now
+        self.numeric_pending = True
+        threading.Thread(
+            target=self._numeric_worker,
+            args=(regions,),
+            name="PokerVisionNumericOCR",
+            daemon=True,
+        ).start()
+
+    def apply_numeric_result(self) -> None:
+        with self.numeric_lock:
+            data = dict(self.numeric_result) if self.numeric_result else None
+        if not data:
+            return
+        if data.get("error"):
+            self.numeric_readout.configure(
+                text=f"OCR NUMÉRICO: {data['error']}"
+            )
+            return
+
+        blinds = data.get("blinds") or {}
+        small = blinds.get("small")
+        big = blinds.get("big")
+        hero_bb = data.get("hero_stack_bb")
+        eff_bb = data.get("effective_stack_bb")
+        pot_bb = data.get("pot_bb")
+        ante = data.get("ante")
+
+        parts = []
+        if small is not None and big is not None:
+            parts.append(f"BLINDS {small:g}/{big:g}")
+        if ante is not None:
+            parts.append(f"ANTE {ante:g}")
+        if hero_bb is not None:
+            parts.append(f"MEU STACK {hero_bb:g} BB")
+        if eff_bb is not None:
+            parts.append(f"EFETIVO {eff_bb:g} BB")
+        if pot_bb is not None:
+            parts.append(f"POTE {pot_bb:g} BB")
+        self.numeric_readout.configure(
+            text="OCR NUMÉRICO: " + (" · ".join(parts) if parts else "sem leitura estável")
+        )
+
+        signature = self._numeric_signature(data)
+        self.numeric_tracker.observe(signature)
+        if (
+            self.numeric_tracker.ready
+            and self.numeric_tracker.stable == signature
+        ):
+            _bridge_publish_numeric(data)
+
     def preview_once(self) -> None:
         try:
             delivery = delivery_status()
@@ -895,6 +1058,9 @@ class PokerVisionApp:
                 self.bridge_readout.configure(
                     text=f"SITE: aguardando Beelink · {delivery['message'][:70]}"
                 )
+
+            self.schedule_numeric_scan()
+            self.apply_numeric_result()
 
             hand_image = self.preview_region(
                 self.config["hand"],
@@ -923,6 +1089,7 @@ class PokerVisionApp:
 
         self.hand_tracker.reset()
         self.board_tracker.reset()
+        self.numeric_tracker.reset()
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
