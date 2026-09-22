@@ -65,6 +65,58 @@ function actionLabel(action){
   return ACTION_LABELS[action]||action||'';
 }
 
+function pressureRanges(stackValue){
+  const stack=Math.max(0,Number(stackValue)||0);
+  if(stack<=0) return null;
+
+  const lowMax=Math.min(30,stack*0.30);
+  const mediumMax=Math.min(100,stack*0.60);
+
+  return {
+    low:{min:Math.min(1,stack),max:Math.max(Math.min(1,stack),lowMax)},
+    medium:{min:lowMax,max:Math.max(lowMax,mediumMax)},
+    high:{min:mediumMax,max:stack},
+    allin:{min:stack,max:stack}
+  };
+}
+
+function formatBB(value){
+  const n=Number(value)||0;
+  const rounded=Math.round(n*10)/10;
+  return rounded.toLocaleString('pt-BR',{maximumFractionDigits:1});
+}
+
+function pressureRangeLabel(kind,stackValue){
+  const ranges=pressureRanges(stackValue);
+  if(!ranges) return 'aguardando stack';
+  const r=ranges[kind];
+  if(kind==='allin') return `${formatBB(r.min)} BB`;
+
+  const lower=kind==='low'?Math.min(1,r.max):r.min;
+  const upper=kind==='high'?Math.max(r.min,Math.max(0,r.max-0.1)):r.max;
+  return `${formatBB(lower)}–${formatBB(upper)} BB`;
+}
+
+function updatePressureLabels(){
+  const f=$('#reviewForm')?.elements;
+  if(!f) return;
+  const stack=Number(f.stack_bb.value||0);
+
+  $('.pressure-choice,.pre-pressure-choice').forEach(button=>{
+    const kind=button.dataset.value;
+    const small=button.querySelector('small');
+    if(small) small.textContent=pressureRangeLabel(kind,stack);
+  });
+
+  const summary=$('#stackPressureSummary');
+  if(summary){
+    const ranges=pressureRanges(stack);
+    summary.textContent=ranges
+      ? `Faixas pelo seu stack de ${formatBB(stack)} BB`
+      : 'Aguardando leitura do seu stack';
+  }
+}
+
 const boardFields=['flop1','flop2','flop3','turn','river'];
 const suitData=[
   ['S','♠','black','Espadas'],
@@ -253,8 +305,14 @@ $$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
   $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.preflop_pressure.value=b.dataset.value;
-  const representative={low:2.5,medium:3.5,high:6,allin:Number(f.stack_bb.value||100)};
-  f.open_to_bb.value=String(representative[b.dataset.value]||3.5);
+  const ranges=pressureRanges(f.stack_bb.value);
+  if(ranges){
+    const r=ranges[b.dataset.value];
+    const representative=b.dataset.value==='allin'
+      ? r.max
+      : (r.min+r.max)/2;
+    f.open_to_bb.value=String(Math.max(0.1,representative));
+  }
   invalidateReview();
   scheduleAnalysis();
 });
@@ -353,6 +411,7 @@ function syncContext(){
 
 $('#reviewForm').addEventListener('input',e=>{
   if(e.target.matches('input,select')){
+    if(e.target.name==='stack_bb') updatePressureLabels();
     invalidateReview();
     scheduleAnalysis();
   }
@@ -527,6 +586,7 @@ function applyVisionNumericState(state){
   let changed=false;
   if(heroBB>0 && Math.abs(Number(f.stack_bb.value||0)-heroBB)>0.01){
     f.stack_bb.value=heroBB.toFixed(2);
+    updatePressureLabels();
     changed=true;
   }
   if(potBB>0 && Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
@@ -763,5 +823,6 @@ async function loadSummary(){
 $('#sessionForm').played_at.value=new Date().toISOString().slice(0,10);
 ['card1','card2',...boardFields].forEach(renderCardSlot);
 updateStreet();
+updatePressureLabels();
 initTable();
 initPokerVision();
