@@ -213,6 +213,26 @@ def decide(data):
         r["notes"].append(f"{c['hand']} está no conjunto de abertura publicado para {range_pos}.")
     return r
 
+def pressure_ranges(stack):
+    stack = max(0.0, float(stack or 0))
+    low_max = min(30.0, stack * 0.30)
+    medium_max = min(100.0, stack * 0.60)
+    return {
+        "low": (min(1.0, stack), max(min(1.0, stack), low_max)),
+        "medium": (low_max, max(low_max, medium_max)),
+        "high": (medium_max, stack),
+        "allin": (stack, stack),
+    }
+
+
+def pressure_representative(stack, pressure):
+    ranges = pressure_ranges(stack)
+    low, high = ranges.get(pressure, (0.0, 0.0))
+    if pressure == "allin":
+        return high
+    return round((low + high) / 2.0, 4)
+
+
 def quick_preflop_response(data, c, r):
     """Reduced-input preflop response.
 
@@ -222,7 +242,6 @@ def quick_preflop_response(data, c, r):
     """
     situation = str(data.get("situation", "unopened"))
     pressure = str(data.get("preflop_pressure", "none")).lower()
-    representative = {"low": 2.5, "medium": 3.5, "high": 5.0}
 
     if situation == "limped":
         r["notes"].append(
@@ -252,10 +271,10 @@ def quick_preflop_response(data, c, r):
         )
         return r
 
-    opening = representative.get(pressure)
-    if opening is None:
+    if pressure not in {"low", "medium", "high", "allin"}:
         r["notes"].append("Selecione BAIXO, MÉDIO, ALTO ou ALL-IN para o raise.")
         return r
+    opening = pressure_representative(c["stack"], pressure)
 
     r["open_to_bb"] = opening
     if c["mode"] != "cash" or c["stack"] != 100 or c["ante"]:
@@ -287,7 +306,7 @@ def quick_preflop_response(data, c, r):
         raise_to_bb=size,
     )
     r["notes"].append(
-        f"Modo rápido usa {opening:g} BB como representante da faixa {pressure.upper()} e 3,5× "
+        f"Modo rápido usa {opening:g} BB, o ponto representativo da faixa {pressure.upper()} calculada pelo seu stack, e 3,5× "
         "como ponto intermediário entre os tamanhos em posição/fora de posição descritos pela fonte. "
         "A posição do agressor não foi informada."
     )
@@ -443,21 +462,15 @@ def postflop(data,c,r):
     pot = number(data,"pot_bb",0,0)
     call = number(data,"call_bb",0,0)
     pressure = str(data.get("bet_pressure", "none")).lower()
-    pressure_mid = {"low": .05, "medium": .20, "high": .50, "allin": 1.0}
-    pressure_labels = {
-        "low": "BAIXA (até 10% do stack)",
-        "medium": "MÉDIA (10–30% do stack)",
-        "high": "ALTA (30–70% do stack)",
-        "allin": "ALL-IN (>70% do stack)",
-    }
-    if call <= 0 and pressure in pressure_mid:
-        call = round(c["stack"] * pressure_mid[pressure], 4)
+    if call <= 0 and pressure in {"low", "medium", "high", "allin"}:
+        call = pressure_representative(c["stack"], pressure)
         r["call_bb"] = call
         r["bet_pressure"] = pressure
+        low, high = pressure_ranges(c["stack"])[pressure]
         r["notes"].append(
-            f"Pressão selecionada: {pressure_labels[pressure]}. "
-            f"Para estimar pot odds sem digitação, o modo rápido usa {pressure_mid[pressure]:.0%} "
-            f"do seu stack ({call:g} BB) como valor representativo da faixa."
+            f"Pressão selecionada: {pressure.upper()}. "
+            f"Com stack de {c['stack']:g} BB, essa faixa vai de {low:g} a {high:g} BB; "
+            f"o motor usa {call:g} BB como valor representativo."
         )
         r["notes"].append(
             "Esta é uma aproximação para revisão rápida; não representa o tamanho exato da aposta."
