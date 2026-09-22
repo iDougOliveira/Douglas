@@ -150,6 +150,8 @@ def decide(data):
     if c["mode"] == "tournament" and data.get("icm_pressure") is not False:
         r["notes"].append("Confirme nos ajustes se há bolha, mesa final, satélite ou pressão de premiação. Estes perfis não calculam ICM nem bounty.")
         return r
+    if data.get("quick_preflop") and situation != "unopened":
+        return quick_preflop_response(data, c, r)
     if situation == "facing_raise":
         return threebet(data, c, r)
     if situation != "unopened":
@@ -210,6 +212,87 @@ def decide(data):
             r["notes"].append("A fonte mistura limp e raise no SB; para uma resposta única, o modo simplificado escolhe o ramo RAISE.")
         r["notes"].append(f"{c['hand']} está no conjunto de abertura publicado para {range_pos}.")
     return r
+
+def quick_preflop_response(data, c, r):
+    """Reduced-input preflop response.
+
+    This mode intentionally avoids pretending we know villain position or an
+    exact sizing. It only applies the already-implemented QQ+/AK value-core
+    guideline when that source coverage is actually sufficient.
+    """
+    situation = str(data.get("situation", "unopened"))
+    pressure = str(data.get("preflop_pressure", "none")).lower()
+    representative = {"low": 2.5, "medium": 3.5, "high": 5.0}
+
+    if situation == "limped":
+        r["notes"].append(
+            "Modo rápido: houve limp. O projeto ainda não possui um range de iso-raise/overlimp "
+            "com cobertura suficiente para escolher DESISTIR/PAGAR/AUMENTAR sem inventar estratégia."
+        )
+        return r
+
+    if situation in {"facing_3bet", "facing_4bet"}:
+        r["notes"].append(
+            "Modo rápido: houve re-raise. Defesa contra 3-bet/4-bet ainda exige ranges específicos; "
+            "o motor não transforma um range de abertura em resposta a re-raise."
+        )
+        return r
+
+    if situation != "facing_raise":
+        return r
+
+    source(r, "threebet", "rules")
+    r["quick_preflop"] = True
+    r["bet_pressure"] = pressure
+
+    if pressure == "allin":
+        r["notes"].append(
+            "Modo rápido: o adversário foi all-in. A diretriz QQ+/AK implementada é de 3-bet por valor, "
+            "não um chart completo de call contra shove; portanto este cenário fica sem cobertura."
+        )
+        return r
+
+    opening = representative.get(pressure)
+    if opening is None:
+        r["notes"].append("Selecione BAIXO, MÉDIO, ALTO ou ALL-IN para o raise.")
+        return r
+
+    r["open_to_bb"] = opening
+    if c["mode"] != "cash" or c["stack"] != 100 or c["ante"]:
+        r["notes"].append(
+            "A única resposta rápida contra raise atualmente implementada é a diretriz de 3-bet "
+            "por valor para cash 100 BB sem ante."
+        )
+        return r
+
+    r.update(
+        profile="Resposta rápida · núcleo de 3-bet por valor",
+        strategy_status="expert_guideline",
+        range="QQ+ AKs AKo",
+        range_hands=sorted(expand_range("QQ+ AKs AKo")),
+    )
+    if c["hand"] not in r["range_hands"]:
+        r["strategy_status"] = "not_covered"
+        r["notes"].append(
+            "Fora do núcleo QQ+/AK, faltam ranges completos de call, fold e blefe. "
+            "O modo rápido não inventa uma resposta."
+        )
+        return r
+
+    # With villain position intentionally omitted, do not claim IP/OOP sizing.
+    size = round(max(opening * 3.5, 2 * opening - 1), 2)
+    r.update(
+        action="RAISE",
+        sizing=f"Aumentar por valor para ~{size:g} BB",
+        raise_to_bb=size,
+    )
+    r["notes"].append(
+        f"Modo rápido usa {opening:g} BB como representante da faixa {pressure.upper()} e 3,5× "
+        "como ponto intermediário entre os tamanhos em posição/fora de posição descritos pela fonte. "
+        "A posição do agressor não foi informada."
+    )
+    return r
+
 
 def threebet(data, c, r):
     villain = str(data.get("opener_position", "")).upper()
