@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.4"
+APP_VERSION = "0.6.5"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
