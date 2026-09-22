@@ -187,11 +187,21 @@ def read_blinds(image: Image.Image) -> dict:
 
 
 def read_single_number(image: Image.Image) -> dict:
-    text = ocr_text(image, numeric_only=True)
+    # Do not whitelist here: the BB suffix is valuable because some poker
+    # clients already display stack/pot directly in big blinds.
+    text = ocr_text(image, numeric_only=False)
     values = extract_numbers(text)
-    return {"text": text, "value": values[0] if values else None}
+    return {
+        "text": text,
+        "value": values[0] if values else None,
+        "unit": "bb" if re.search(r"\\bBB\\b", text, re.IGNORECASE) else "chips",
+    }
 
 
 def read_number_list(image: Image.Image) -> dict:
-    text = ocr_text(image, numeric_only=True, multiline=True)
-    return {"text": text, "values": extract_numbers(text)}
+    text = ocr_text(image, numeric_only=False, multiline=True)
+    return {
+        "text": text,
+        "values": extract_numbers(text),
+        "unit": "bb" if re.search(r"\\bBB\\b", text, re.IGNORECASE) else "chips",
+    }
