@@ -307,6 +307,7 @@ def _detect_card_boxes(
             box
             for box in boxes
             if box[3] >= max(14, int(tallest * 0.55))
+            and 0.38 <= (box[2] / max(box[3], 1)) <= 0.95
         ]
 
     if len(boxes) > slot_count:
@@ -362,7 +363,15 @@ def recognize_hand(image: Image.Image) -> RegionReading:
 
 
 def recognize_board(image: Image.Image) -> RegionReading:
-    return recognize_region(image, 5)
+    # PokerStars frequently overlays chips/amounts across the lower edge of
+    # community cards. Rank and suit recognition only needs the upper part.
+    # Cropping the lower 25% greatly reduces false card boxes from those chips
+    # without changing the calibrated board coordinates.
+    width, height = image.size
+    safe_height = max(45, int(height * 0.75))
+    safe_height = min(height, safe_height)
+    board_top = image.crop((0, 0, width, safe_height))
+    return recognize_region(board_top, 5)
 
 
 def street_from_board(reading: RegionReading) -> str:
