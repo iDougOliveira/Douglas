@@ -79,6 +79,26 @@ def optional_int_range(
     return number
 
 
+def normalized_points(value: object) -> list[list[float]]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError("Pontos de assentos inválidos.")
+    clean = []
+    for point in value:
+        if (
+            not isinstance(point, list)
+            or len(point) != 2
+        ):
+            raise ValueError("Ponto de assento inválido.")
+        x = float(point[0])
+        y = float(point[1])
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            raise ValueError("Coordenada de assento inválida.")
+        clean.append([x, y])
+    return clean
+
+
 def normalize_vision_payload(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Estado visual inválido.")
@@ -158,6 +178,14 @@ def normalize_vision_payload(data: dict) -> dict:
         "table_scan_confidence": str(
             data.get("table_scan_confidence", "")
         )[:20],
+        "table_scan_state": (
+            str(data.get("table_scan_state", "disabled"))
+            if str(data.get("table_scan_state", "disabled"))
+            in {"disabled", "waiting", "partial", "confirmed", "error"}
+            else "error"
+        ),
+        "table_scan_at": optional_nonnegative_number(data.get("table_scan_at")),
+        "inactive_points": normalized_points(data.get("inactive_points", [])),
         "updated_at": float(data.get("updated_at", 0) or 0),
     }
 
