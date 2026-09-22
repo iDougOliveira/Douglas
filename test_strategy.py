@@ -116,6 +116,7 @@ class StrategyTest(unittest.TestCase):
         shove = review(**base, bet_pressure="allin")
         self.assertEqual(shove["call_bb"], 40.0)
         self.assertEqual(shove["bet_pressure"], "allin")
+        self.assertEqual(shove["action"], "ALL-IN")
 
     def test_turn_and_river_require_board(self):
         r = review(
