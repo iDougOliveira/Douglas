@@ -105,6 +105,7 @@ class VisionRelayTests(unittest.TestCase):
         self.assertEqual(state["hand"], ["JS", "9C"])
         self.assertEqual(state["board"], ["2D", "8H", "2S"])
         self.assertEqual(state["street"], "FLOP")
+        self.assertIsNone(state["detected_player_count"])
 
     def test_vision_payload_rejects_duplicate_cards(self):
         with self.assertRaises(ValueError):
@@ -137,6 +138,28 @@ class VisionNumericRelayTests(unittest.TestCase):
         self.assertEqual(state["hero_stack_bb"], 38.25)
         self.assertEqual(state["effective_stack_bb"], 21.0)
         self.assertEqual(state["pot_bb"], 2.25)
+
+    def test_vision_table_player_count_fields(self):
+        state = app.normalize_vision_payload({
+            "hand": [],
+            "board": [],
+            "street": "PRÉ-FLOP",
+            "detected_player_count": 6,
+            "inactive_seats": 3,
+            "table_max_seats": 9,
+            "table_scan_confidence": "alta",
+        })
+        self.assertEqual(state["detected_player_count"], 6)
+        self.assertEqual(state["inactive_seats"], 3)
+        self.assertEqual(state["table_max_seats"], 9)
+
+        with self.assertRaises(ValueError):
+            app.normalize_vision_payload({
+                "hand": [],
+                "board": [],
+                "street": "AGUARDANDO",
+                "detected_player_count": 11,
+            })
 
     def test_vision_numeric_fields_reject_negative(self):
         with self.assertRaises(ValueError):
