@@ -389,14 +389,33 @@ def postflop(data,c,r):
         r["pot_odds_pct"] = pot_odds
         if info["score"] >= 2:
             action = "RAISE" if info["score"] >= 3 or texture["wet"] else "CALL"
-            r.update(action=action, sizing="Aumentar por valor" if action=="RAISE" else f"Pagar {call:g} BB")
+            if pressure == "allin":
+                action = "ALL-IN"
+                sizing = f"Continuar exige o stack: ~{call:g} BB"
+            else:
+                sizing = "Aumentar por valor" if action=="RAISE" else f"Pagar {call:g} BB"
+            r.update(action=action, sizing=sizing)
         elif info["overpair"] or info["top_pair"]:
-            r.update(action="CALL", sizing=f"Pagar {call:g} BB")
+            action = "ALL-IN" if pressure == "allin" else "CALL"
+            r.update(
+                action=action,
+                sizing=f"Continuar exige o stack: ~{call:g} BB" if action=="ALL-IN" else f"Pagar {call:g} BB"
+            )
         elif info["outs"]:
             draw_equity = min(60, info["outs"] * (4 if len(board)==3 else 2))
             r["estimated_draw_equity_pct"] = draw_equity
-            r.update(action="CALL" if draw_equity >= pot_odds else "FOLD",
-                     sizing=f"Pagar {call:g} BB" if draw_equity >= pot_odds else "Pot odds insuficientes para o draw")
+            continue_draw = draw_equity >= pot_odds
+            action = ("ALL-IN" if pressure == "allin" else "CALL") if continue_draw else "FOLD"
+            r.update(
+                action=action,
+                sizing=(
+                    f"Continuar exige o stack: ~{call:g} BB"
+                    if action=="ALL-IN"
+                    else f"Pagar {call:g} BB"
+                    if action=="CALL"
+                    else "Pot odds insuficientes para o draw"
+                )
+            )
             r["notes"].append(f"Estimativa didática pela regra 4/2: ~{draw_equity:.1f}% para {info['outs']} outs versus {pot_odds:.1f}% de pot odds.")
         else:
             r.update(action="FOLD", sizing="Sem força/draw suficiente para pagar")
