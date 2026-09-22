@@ -48,6 +48,9 @@ let visionEnabled=true;
 let visionTimer=null;
 let visionLastSignature='';
 let visionLastNumericSignature='';
+let visionPendingPlayerCount=null;
+let visionPendingInactiveSeats=null;
+let visionPendingMaxSeats=null;
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
 
@@ -679,6 +682,52 @@ function applyVisionNumericState(state){
   }
 }
 
+function applyVisionTableState(state){
+  if(!visionEnabled || !state?.running) return;
+
+  const count=Number(state?.detected_player_count||0);
+  const inactive=Number(state?.inactive_seats??0);
+  const maxSeats=Number(state?.table_max_seats||0);
+  const meter=$('#visionPlayers');
+
+  if(Number.isInteger(count) && count>=2 && count<=10){
+    visionPendingPlayerCount=count;
+    visionPendingInactiveSeats=Number.isFinite(inactive)?inactive:null;
+    visionPendingMaxSeats=Number.isInteger(maxSeats)?maxSeats:null;
+    if(meter){
+      const inactiveText=visionPendingInactiveSeats!=null
+        ? ` · ${visionPendingInactiveSeats} ausente(s)/vazio(s)`
+        : '';
+      const maxText=visionPendingMaxSeats
+        ? ` de ${visionPendingMaxSeats}`
+        : '';
+      meter.textContent=`Próxima mão: ${count} jogadores${maxText}${inactiveText}`;
+      meter.classList.add('ready');
+    }
+  }else if(meter){
+    meter.textContent='Jogadores: aguardando 3 leituras estáveis da mesa';
+    meter.classList.remove('ready');
+  }
+}
+
+function applyPendingPlayerCountForNewHand(){
+  const count=Number(visionPendingPlayerCount||0);
+  if(!Number.isInteger(count) || count<2 || count>10) return false;
+  if(!positionOrder?.[count]) return false;
+  if(playerCount===count) return false;
+
+  playerCount=count;
+  dealerSeat=Math.min(dealerSeat,count-1);
+  try{localStorage.setItem('pokercoach.playerCount',String(count))}catch(e){}
+  renderTable();
+  const meter=$('#visionPlayers');
+  if(meter){
+    meter.textContent=`Mão atual: ${count} jogadores · contagem congelada no início`;
+    meter.classList.add('ready');
+  }
+  return true;
+}
+
 function applyVisionState(state){
   if(!visionEnabled || !state?.running || !state?.confirmed) return;
 
@@ -701,6 +750,7 @@ function applyVisionState(state){
     resetPreflopAction();
     resetPostAction();
     lastStreet='preflop';
+    applyPendingPlayerCountForNewHand();
   }
   const desired={
     card1:hand[0]||'',
@@ -745,6 +795,7 @@ async function pollPokerVision(){
 
     if(state.connected && state.running && visionEnabled){
       applyVisionNumericState(state);
+      applyVisionTableState(state);
     }
 
     if(!state.connected){
