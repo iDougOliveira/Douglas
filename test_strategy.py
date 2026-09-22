@@ -175,6 +175,40 @@ class StrategyTest(unittest.TestCase):
         self.assertEqual(shove["bet_pressure"], "allin")
         self.assertEqual(shove["action"], "ALL-IN")
 
+    def test_double_paired_board_does_not_fake_value_hand(self):
+        # Screenshot regression: Hero J9s on 6h 6c 5c 5d does not own a
+        # normal two-pair value hand; everyone shares 66/55 and Hero has J kicker.
+        facing = review(
+            mode="cash", player_count=9, position="CO", stack_bb=113,
+            card1="Js", card2="9s", street="turn",
+            flop1="6h", flop2="6c", flop3="5c", turn="5d",
+            pot_bb=31.2, call_bb=0,
+            post_action="facing_bet", bet_pressure="medium",
+        )
+        self.assertNotEqual(facing["action"], "RAISE")
+        self.assertEqual(facing["action"], "FOLD")
+        self.assertIn("kicker J", facing["hand_class"])
+
+        checked = review(
+            mode="cash", player_count=9, position="CO", stack_bb=113,
+            card1="Js", card2="9s", street="turn",
+            flop1="6h", flop2="6c", flop3="5c", turn="5d",
+            pot_bb=31.2, call_bb=0,
+            post_action="checked_to_hero", bet_pressure="none",
+        )
+        self.assertEqual(checked["action"], "CHECK")
+
+        # A pocket pair above the lower board pair is recognized as a private
+        # improvement, but still must not auto-raise on a double-paired board.
+        improved = review(
+            mode="cash", player_count=9, position="CO", stack_bb=113,
+            card1="7s", card2="7d", street="turn",
+            flop1="6h", flop2="6c", flop3="5c", turn="5d",
+            pot_bb=31.2, call_bb=0,
+            post_action="facing_bet", bet_pressure="medium",
+        )
+        self.assertEqual(improved["action"], "CALL")
+
     def test_turn_and_river_require_board(self):
         r = review(
             card1="As", card2="Qh", street="turn",
