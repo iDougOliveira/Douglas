@@ -108,3 +108,19 @@ Conversões automáticas:
 - stack efetivo = min(stack do hero, maior stack adversário detectado) / big blind.
 
 A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento de cartas continua independente do Tesseract.
+
+
+## V0.7.0 — contagem automática de jogadores
+
+Recurso isolado do reconhecedor de cartas.
+
+1. Clique em **3. MESA / JOGADORES**.
+2. Selecione a área da mesa com os assentos e nomes. Evite incluir chat e botões inferiores.
+3. Em **Lugares máx.**, informe a capacidade da mesa (normalmente 9 no PokerStars mostrado nos testes).
+4. Inicie o monitoramento.
+
+O OCR procura apenas estados explícitos como **Ausente** e **Lugar Vazio**. A quantidade detectada precisa se repetir em 3 leituras antes de ser enviada ao PokerCoach.
+
+O PokerCoach não altera a quantidade de jogadores no meio de uma mão. A leitura estável fica preparada para a **próxima mão** e é congelada quando as novas cartas do hero aparecem.
+
+A leitura de mesa roda em módulo separado (table_ocr.py) e não altera recognizer.py, templates de cartas, MÃO, BOARD, MEU STACK ou POTE.
