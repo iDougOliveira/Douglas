@@ -19,7 +19,8 @@ import mss
 from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
-from numeric_ocr import OCR_ERROR, read_pot, read_single_number\nfrom table_ocr import analyze_table
+from numeric_ocr import OCR_ERROR, read_pot, read_single_number
+from table_ocr import analyze_table
 
 
 APP_VERSION = "0.7.0"
