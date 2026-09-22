@@ -66,16 +66,26 @@ function actionLabel(action){
 }
 
 function pressureRanges(stackValue){
-  const stack=Math.max(0,Number(stackValue)||0);
-  if(stack<=0) return null;
+  const raw=Math.max(0,Number(stackValue)||0);
+  if(raw<=0) return null;
 
-  const lowMax=Math.min(30,stack*0.30);
-  const mediumMax=Math.min(100,stack*0.60);
+  const whole=Math.abs(raw-Math.round(raw))<0.001 && raw>=10;
+  const step=whole?1:0.1;
+  const roundBoundary=value=>whole?Math.round(value):Math.round(value*10)/10;
+  const stack=whole?Math.round(raw):Math.round(raw*10)/10;
+
+  const lowMax=roundBoundary(Math.min(30,stack*0.30));
+  const mediumMax=roundBoundary(Math.min(100,stack*0.60));
+
+  const lowMin=Math.min(step,stack);
+  const mediumMin=Math.min(stack,roundBoundary(lowMax+step));
+  const highMin=Math.min(stack,roundBoundary(mediumMax+step));
+  const highMax=Math.max(highMin,roundBoundary(stack-step));
 
   return {
-    low:{min:Math.min(1,stack),max:Math.max(Math.min(1,stack),lowMax)},
-    medium:{min:lowMax,max:Math.max(lowMax,mediumMax)},
-    high:{min:mediumMax,max:stack},
+    low:{min:lowMin,max:Math.max(lowMin,lowMax)},
+    medium:{min:mediumMin,max:Math.max(mediumMin,mediumMax)},
+    high:{min:highMin,max:highMax},
     allin:{min:stack,max:stack}
   };
 }
@@ -91,10 +101,7 @@ function pressureRangeLabel(kind,stackValue){
   if(!ranges) return 'aguardando stack';
   const r=ranges[kind];
   if(kind==='allin') return `${formatBB(r.min)} BB`;
-
-  const lower=kind==='low'?Math.min(1,r.max):r.min;
-  const upper=kind==='high'?Math.max(r.min,Math.max(0,r.max-0.1)):r.max;
-  return `${formatBB(lower)}–${formatBB(upper)} BB`;
+  return `${formatBB(r.min)}–${formatBB(r.max)} BB`;
 }
 
 function updatePressureLabels(){
