@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.7.1"
+APP_VERSION = "0.7.2"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -1086,7 +1086,7 @@ class PokerVisionApp:
         if not region:
             return
         now = time.time()
-        if now - self.last_table_scan < 1.5:
+        if now - self.last_table_scan < 0.25:
             return
 
         self.last_table_scan = now
@@ -1156,7 +1156,7 @@ class PokerVisionApp:
             self.table_readout.configure(
                 text=(
                     f"JOGADORES: candidato {count}/{max_seats} · "
-                    f"inativos/vazios {inactive} · confirmando 3 leituras"
+                    f"inativos/vazios {inactive} · confirmando 3 leituras rápidas"
                 )
             )
             _bridge_publish_table({
