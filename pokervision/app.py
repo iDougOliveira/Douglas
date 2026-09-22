@@ -3,6 +3,8 @@ from __future__ import annotations
 import ctypes
 import ipaddress
 import json
+import logging
+from logging.handlers import RotatingFileHandler
 import os
 import threading
 import time
@@ -23,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.7.0"
+APP_VERSION = "0.7.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -47,6 +49,9 @@ _BRIDGE_STATE = {
     "inactive_seats": None,
     "table_max_seats": 9,
     "table_scan_confidence": "",
+    "table_scan_state": "disabled",
+    "table_scan_at": 0.0,
+    "inactive_points": [],
     "updated_at": 0.0,
 }
 
@@ -120,6 +125,9 @@ def _bridge_publish_table(data: dict) -> None:
         "inactive_seats",
         "table_max_seats",
         "table_scan_confidence",
+        "table_scan_state",
+        "table_scan_at",
+        "inactive_points",
     }
     with _BRIDGE_LOCK:
         for key, value in data.items():
@@ -312,11 +320,40 @@ def enable_dpi_awareness() -> None:
         pass
 
 
-def config_path() -> Path:
+LOGGER = logging.getLogger("PokerVision")
+
+
+def app_data_dir() -> Path:
     base = Path(os.environ.get("APPDATA", Path.home()))
     path = base / APP_NAME
     path.mkdir(parents=True, exist_ok=True)
-    return path / "config.json"
+    return path
+
+
+def log_path() -> Path:
+    return app_data_dir() / "pokervision.log"
+
+
+def setup_logging() -> None:
+    if LOGGER.handlers:
+        return
+    LOGGER.setLevel(logging.INFO)
+    handler = RotatingFileHandler(
+        log_path(),
+        maxBytes=1_000_000,
+        backupCount=2,
+        encoding="utf-8",
+    )
+    handler.setFormatter(
+        logging.Formatter("%(asctime)s | %(levelname)s | %(message)s")
+    )
+    LOGGER.addHandler(handler)
+    LOGGER.propagate = False
+    LOGGER.info("START version=%s", APP_VERSION)
+
+
+def config_path() -> Path:
+    return app_data_dir() / "config.json"
 
 
 def capture_dir() -> Path:
@@ -522,6 +559,9 @@ class PokerVisionApp:
         self.table_result: dict | None = None
         self.table_pending = False
         self.last_table_scan = 0.0
+        self.last_logged_card_state = None
+        self.last_logged_numeric_state = None
+        self.last_logged_table_state = None
         _bridge_publish(
             running=False,
             confirmed=False,
@@ -780,6 +820,12 @@ class PokerVisionApp:
 
         ttk.Button(
             bottom,
+            text="Copiar diagnóstico",
+            command=self.copy_diagnostics,
+        ).pack(side="right", padx=(10, 0))
+
+        ttk.Button(
+            bottom,
             text="Salvar amostra",
             command=self.save_sample,
         ).pack(side="right", padx=(10, 0))
@@ -828,6 +874,14 @@ class PokerVisionApp:
             if selector.result is not None:
                 self.config[key] = selector.result
                 save_config(self.config)
+                LOGGER.info(
+                    "CALIBRATION key=%s x=%s y=%s w=%s h=%s",
+                    key,
+                    selector.result.get("x"),
+                    selector.result.get("y"),
+                    selector.result.get("width"),
+                    selector.result.get("height"),
+                )
         except Exception as exc:
             messagebox.showerror("PokerVision", f"Falha ao selecionar região:\n{exc}")
         finally:
@@ -982,6 +1036,20 @@ class PokerVisionApp:
             street=stable_street,
         )
 
+        card_signature = (
+            tuple(stable_hand),
+            tuple(stable_board),
+            stable_street,
+        )
+        if card_signature != self.last_logged_card_state:
+            LOGGER.info(
+                "CARDS confirmed hand=%s board=%s street=%s",
+                list(stable_hand),
+                list(stable_board),
+                stable_street,
+            )
+            self.last_logged_card_state = card_signature
+
         if not stable_hand:
             self.status.configure(
                 text=f"AGUARDANDO MÃO · BOARD: {format_codes(stable_board)} · site sincronizado"
@@ -1034,21 +1102,44 @@ class PokerVisionApp:
             data = dict(self.table_result) if self.table_result else None
         if not data:
             return
+
+        now = time.time()
         if data.get("error"):
+            error = str(data["error"])
             self.table_readout.configure(
-                text=f"JOGADORES: OCR da mesa indisponível · {data['error']}"
+                text=f"JOGADORES: ERRO · {error}"
             )
+            _bridge_publish_table({
+                "table_scan_state": "error",
+                "table_scan_at": now,
+                "table_scan_confidence": "baixa",
+            })
+            signature = ("error", error[:80])
+            if signature != self.last_logged_table_state:
+                LOGGER.warning("TABLE_OCR error=%s", error)
+                self.last_logged_table_state = signature
             return
+
         if not data.get("valid"):
             evidence = int(data.get("evidence_words", 0) or 0)
             self.table_readout.configure(
-                text=f"JOGADORES: leitura pendente · evidências={evidence}"
+                text=f"JOGADORES: leitura parcial · evidências={evidence}"
             )
+            _bridge_publish_table({
+                "table_scan_state": "partial",
+                "table_scan_at": now,
+                "table_scan_confidence": "baixa",
+            })
+            signature = ("partial", evidence)
+            if signature != self.last_logged_table_state:
+                LOGGER.info("TABLE_OCR partial evidence=%s", evidence)
+                self.last_logged_table_state = signature
             return
 
         count = int(data["player_count"])
         inactive = int(data.get("inactive_seats", 0))
         max_seats = int(data.get("max_seats", self.config.get("table_max_seats", 9)))
+        points = data.get("inactive_points", [])
         signature = (count, inactive, max_seats)
         self.table_tracker.observe(signature)
 
@@ -1062,6 +1153,11 @@ class PokerVisionApp:
                     f"inativos/vazios {inactive} · confirmando 3 leituras"
                 )
             )
+            _bridge_publish_table({
+                "table_scan_state": "partial",
+                "table_scan_at": now,
+                "table_scan_confidence": str(data.get("confidence", "média")),
+            })
             return
 
         confidence = str(data.get("confidence", "média"))
@@ -1076,7 +1172,21 @@ class PokerVisionApp:
             "inactive_seats": inactive,
             "table_max_seats": max_seats,
             "table_scan_confidence": confidence,
+            "table_scan_state": "confirmed",
+            "table_scan_at": now,
+            "inactive_points": points,
         })
+
+        logged = ("confirmed", count, inactive, max_seats)
+        if logged != self.last_logged_table_state:
+            LOGGER.info(
+                "TABLE_OCR confirmed active=%s max=%s inactive=%s confidence=%s",
+                count,
+                max_seats,
+                inactive,
+                confidence,
+            )
+            self.last_logged_table_state = logged
 
     def _numeric_signature(self, data: dict) -> tuple:
         return (
@@ -1179,6 +1289,13 @@ class PokerVisionApp:
         self.numeric_tracker.observe(signature)
         if self.numeric_tracker.ready and self.numeric_tracker.stable == signature:
             _bridge_publish_numeric(data)
+            if signature != self.last_logged_numeric_state:
+                LOGGER.info(
+                    "NUMERIC stable hero_stack_bb=%s pot_bb=%s",
+                    data.get("hero_stack_bb"),
+                    data.get("pot_bb"),
+                )
+                self.last_logged_numeric_state = signature
 
     def preview_once(self) -> None:
         try:
@@ -1211,6 +1328,7 @@ class PokerVisionApp:
                 self.update_recognition(hand_image, board_image)
         except Exception as exc:
             self.status.configure(text=f"Falha de captura/reconhecimento: {exc}")
+            LOGGER.exception("PREVIEW failure: %s", exc)
 
     def start(self) -> None:
         if not self.config["hand"] or not self.config["board"]:
@@ -1231,17 +1349,28 @@ class PokerVisionApp:
             "inactive_seats": None,
             "table_max_seats": int(self.config.get("table_max_seats", 9) or 9),
             "table_scan_confidence": "",
+            "table_scan_state": "waiting" if self.config.get("table") else "disabled",
+            "table_scan_at": 0.0,
+            "inactive_points": [],
         })
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
             text="RECONHECIMENTO ATIVO · confirmando leituras em 3 capturas."
         )
+        LOGGER.info(
+            "MONITOR start table=%s max_seats=%s",
+            bool(self.config.get("table")),
+            self.config.get("table_max_seats", 9),
+        )
         self.refresh_loop()
 
     def stop(self) -> None:
+        was_running = self.running
         self.running = False
         _bridge_publish(running=False, confirmed=False)
+        if was_running:
+            LOGGER.info("MONITOR stop")
         if self.config["hand"] and self.config["board"]:
             self.status.configure(
                 text="Monitoramento parado. Regiões continuam salvas."
@@ -1252,6 +1381,45 @@ class PokerVisionApp:
             return
         self.preview_once()
         self.root.after(self.REFRESH_MS, self.refresh_loop)
+
+    def copy_diagnostics(self) -> None:
+        with self.numeric_lock:
+            numeric = dict(self.numeric_result) if self.numeric_result else None
+        with self.table_lock:
+            table = dict(self.table_result) if self.table_result else None
+
+        config_summary = {}
+        for key in CALIBRATION_KEYS:
+            region = self.config.get(key)
+            config_summary[key] = bool(region)
+        config_summary["table_max_seats"] = self.config.get("table_max_seats", 9)
+
+        payload = {
+            "PokerVision": APP_VERSION,
+            "running": self.running,
+            "bridge": _bridge_snapshot(),
+            "delivery": delivery_status(),
+            "config": config_summary,
+            "numeric_last": numeric,
+            "table_last": table,
+            "log_file": str(log_path()),
+        }
+        text = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
+        try:
+            self.root.clipboard_clear()
+            self.root.clipboard_append(text)
+            self.root.update()
+            LOGGER.info("DIAGNOSTICS copied")
+            messagebox.showinfo(
+                "PokerVision",
+                "Diagnóstico copiado. Pode colar direto no ChatGPT.",
+            )
+        except Exception as exc:
+            LOGGER.exception("DIAGNOSTICS copy failure: %s", exc)
+            messagebox.showerror(
+                "PokerVision",
+                f"Falha ao copiar diagnóstico:\n{exc}\n\nLog: {log_path()}",
+            )
 
     def save_sample(self) -> None:
         if not self.config["hand"] or not self.config["board"]:
@@ -1282,11 +1450,13 @@ class PokerVisionApp:
     def close(self) -> None:
         self.running = False
         _bridge_publish(running=False, confirmed=False)
+        LOGGER.info("CLOSE")
         self.root.destroy()
 
 
 def main() -> None:
     enable_dpi_awareness()
+    setup_logging()
     start_bridge_server()
     start_beelink_publisher()
     root = tk.Tk()
