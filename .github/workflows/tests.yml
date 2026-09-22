@@ -15,7 +15,7 @@ jobs:
       - name: Python tests
         run: python -m unittest -v
       - name: PokerVision syntax
-        run: python -m py_compile pokervision/app.py pokervision/recognizer.py pokervision/templates_data.py pokervision/numeric_ocr.py
+        run: python -m py_compile pokervision/app.py pokervision/recognizer.py pokervision/templates_data.py pokervision/numeric_ocr.py pokervision/table_ocr.py
       - name: PokerVision template integrity
         run: |
           python - <<'PY'
