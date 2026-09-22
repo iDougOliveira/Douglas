@@ -188,3 +188,16 @@ select[name="opener_position"] option{background:#0d1e18}
 .vision-numbers.ready{border-style:solid;border-color:#247d5c;color:#8ff0c7;background:#0b2018}
 .coverage-warning{margin:8px 0 12px;padding:10px 12px;border:1px solid #c38b2f;border-radius:10px;background:#2a210d;color:#ffd889;font-weight:800}
 .decision.sem-cobertura{background:#5d4516!important;color:#ffe2a3!important;border-color:#c38b2f!important}
+
+
+/* V3.4 — pós-flop simplificado por pressão relativa ao stack */
+.bet-toggle{width:100%;padding:13px 16px;border-radius:11px;border:1px solid #315b4c;background:#10251d;color:#dcebe5;font-weight:900;font-size:15px}
+.bet-toggle.active{background:#7a2e24;border-color:#ff795f;color:#fff;box-shadow:0 0 0 2px #ff795f33}
+.pressure-panel{margin-top:10px;padding:10px;border:1px solid var(--line);border-radius:11px;background:#091b14}
+.pressure-panel>span{display:block;margin-bottom:8px;color:var(--muted);font-size:12px}
+.pressure-choices{display:grid;grid-template-columns:repeat(4,1fr);gap:7px}
+.pressure-choice{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;border-radius:9px;background:#11271f}
+.pressure-choice b{font-size:12px}.pressure-choice small{font-size:10px;color:var(--muted)}
+.pressure-choice.active{border-color:var(--green);background:#123c2d;color:var(--green)}
+.pressure-choice.allin.active{border-color:#ff6d5b;background:#4b201a;color:#ffb1a6}
+@media(max-width:520px){.pressure-choices{grid-template-columns:repeat(2,1fr)}}
