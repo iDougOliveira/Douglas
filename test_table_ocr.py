@@ -27,6 +27,10 @@ class TableOCRLogicTests(unittest.TestCase):
         clusters = table_ocr.cluster_points(points)
         self.assertEqual(len(clusters), 2)
 
+    def test_invalid_active_count_never_publishes(self):
+        self.assertIsNone(table_ocr.infer_player_count(9, 9))
+        self.assertIsNone(table_ocr.infer_player_count(2, 2))
+
 
 if __name__ == "__main__":
     unittest.main()
