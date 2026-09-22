@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.6.0">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.7.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.6.0 · MODO RÁPIDO</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.7.0 · POTE + STACK</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -92,14 +92,14 @@
             <input type="hidden" name="active_opponents" value="1">
             <input type="hidden" name="ante_bb" value="0">
             <div id="betPressure" class="pressure-panel" hidden>
-              <span>Faixas recalculadas automaticamente pelo SEU stack:</span>
+              <span id="postflopPressureSummary">Aguardando leitura do pote e do stack</span>
               <div class="pressure-choices">
                 <button type="button" class="pressure-choice" data-value="low"><b>BAIXA</b><small>—</small></button>
                 <button type="button" class="pressure-choice" data-value="medium"><b>MÉDIA</b><small>—</small></button>
                 <button type="button" class="pressure-choice" data-value="high"><b>ALTA</b><small>—</small></button>
                 <button type="button" class="pressure-choice allin" data-value="allin"><b>ALL-IN</b><small>—</small></button>
               </div>
-              <p class="hint">Faixas de pressão para revisão rápida. O motor usa uma aproximação relativa ao seu stack, não o valor exato da aposta.</p>
+              <p class="hint">Pós-flop: BAIXA = 25–33% do pote, MÉDIA = 50–67%, ALTA = 75–100%. ALL-IN usa seu stack restante. Se a aposta cair entre duas faixas, escolha a mais próxima.</p>
             </div>
             <input name="pot_bb" type="hidden" value="0">
           </div>
@@ -123,7 +123,7 @@
     </form>
     <div id="summary" class="summary"></div>
   </section>
-  <section id="about" class="panel"><div class="card"><h2>Motor 3.0 — base e cobertura</h2>
+  <section id="about" class="panel"><div class="card"><h2>Motor 3.7 — base e cobertura</h2>
     <p>As regras antigas foram substituídas por consultas determinísticas aos resumos públicos de ranges, diretrizes de especialistas e cálculos de pot odds. O motor não executa um solver nem aprende sozinho.</p>
     <ul><li>Cash 6-max, 100 BB: abertura por posição; 2,5 BB fora dos blinds.</li><li>Cash 8-max: resumo de abertura e tamanho de 3 BB da imagem publicada. Aplicação limitada a 100 BB por decisão do app; o texto não informa stack nem rake. É uma referência adaptada.</li><li>Torneio 9-max: resumos de abertura a 75 e 100 BB. A 75 BB, o resumo não informa o tamanho do raise.</li><li>Torneio 8-max, 10 BB: resumo de stack curto. Ações agrupadas permanecem “MISTA”, sem frequência inventada.</li><li>Cash 100 BB, sem ante: diretriz de 3-bet com QQ+/AK contra um único open de 2 a 5 BB, sem callers. Considera posição do agressor e posição relativa no pós-flop. Não é um range completo de defesa.</li><li>Pós-flop: pot odds; decisão de call/fold por EV apenas em cash, contra um adversário, com equity informada e encerramento de todas as apostas, sem side pots nem rake adicional.</li></ul>
     <p>As listas escritas da fonte são resumos e não reproduzem todas as frequências das imagens. “FOLD” numa consulta de abertura significa fora desse resumo; não é uma afirmação de fold GTO universal. No SB, o conjunto publicado mistura limp e raise sem discriminar a ação de cada mão.</p>
@@ -132,6 +132,8 @@
     <li><a href="https://pokercoaching.com/preflop-charts/" target="_blank" rel="noopener noreferrer">PokerCoaching: ranges e tamanhos de abertura</a></li>
     <li><a href="https://upswingpoker.com/3-bet-strategy-aggressive-preflop/" target="_blank" rel="noopener noreferrer">Upswing: núcleo de valor e tamanhos de 3-bet</a></li>
     <li><a href="https://upswingpoker.com/pot-odds-step-by-step/" target="_blank" rel="noopener noreferrer">Upswing: pot odds</a></li>
+    <li><a href="https://pokercoaching.com/cheatsheets/" target="_blank" rel="noopener noreferrer">PokerCoaching: sizing pós-flop 25–33%, 50–67%, 75–100%</a></li>
+    <li><a href="https://blog.gtowizard.com/stack-to-pot-ratio/" target="_blank" rel="noopener noreferrer">GTO Wizard: stack-to-pot ratio (SPR)</a></li>
     <li><a href="https://www.pokertda.com/view-poker-tda-rules/" target="_blank" rel="noopener noreferrer">Poker TDA: raises mínimos</a></li></ul>
     <p>Pesquisa complementar: <a href="https://blog.gtowizard.com/how-stack-sizes-change-your-range/" target="_blank" rel="noopener noreferrer">GTO Wizard (stack)</a> e <a href="https://forumserver.twoplustwo.com/170/live-no-limit-holdem-cash/how-closely-do-you-follow-preflop-charts-1821061/" target="_blank" rel="noopener noreferrer">Two Plus Two (discussão sobre limites de tabelas)</a>. Opiniões de fórum não foram convertidas em ranges automáticos.</p>
     <p>Ferramenta independente para simulações e revisão de mãos encerradas. O companion PokerVision pode ler somente regiões selecionadas da tela para preencher cartas automaticamente; ele não clica, não executa apostas e não controla o software de poker.</p>
@@ -142,5 +144,5 @@
   <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
   <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.6.0"></script>
+<script src="/app.js?v=3.7.0"></script>
 </body></html>
