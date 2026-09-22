@@ -148,10 +148,16 @@ class VisionNumericRelayTests(unittest.TestCase):
             "inactive_seats": 3,
             "table_max_seats": 9,
             "table_scan_confidence": "alta",
+            "table_scan_state": "confirmed",
+            "table_scan_at": 123.5,
+            "inactive_points": [[0.1, 0.2], [0.8, 0.2]],
         })
         self.assertEqual(state["detected_player_count"], 6)
         self.assertEqual(state["inactive_seats"], 3)
         self.assertEqual(state["table_max_seats"], 9)
+        self.assertEqual(state["table_scan_state"], "confirmed")
+        self.assertEqual(state["table_scan_at"], 123.5)
+        self.assertEqual(state["inactive_points"], [[0.1, 0.2], [0.8, 0.2]])
 
         with self.assertRaises(ValueError):
             app.normalize_vision_payload({
