@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.7.0"
+ENGINE_VERSION = "3.8.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -273,85 +273,205 @@ def postflop_pressure_representative(pot, stack, pressure):
 
 
 
-def quick_preflop_response(data, c, r):
-    """Reduced-input preflop response.
+def _quick_open_profile(c):
+    """Reuse the documented RFI profile as a conservative limp/isolation gate."""
+    if c["mode"] == "cash":
+        profile_id = "cash6_100" if c["players"] <= 6 else "cash8_reference"
+    else:
+        ids = ["mtt8_10", "mtt9_75", "mtt9_100"]
+        profile_id = min(
+            ids,
+            key=lambda k: (
+                abs(PROFILES[k]["stack"] - c["stack"]),
+                abs(PROFILES[k]["players"] - c["players"]),
+            ),
+        )
+    profile = PROFILES[profile_id]
+    pos = c["position"]
+    aliases = {"BTN/SB": "SB", "UTG+2": "UTG+1", "MP": "UTG+2"}
+    if pos not in profile["ranges"]:
+        pos = aliases.get(pos, pos)
+    if pos not in profile["ranges"] and pos == "UTG+2":
+        pos = "UTG+1"
+    return profile, pos
 
-    This mode intentionally avoids pretending we know villain position or an
-    exact sizing. It only applies the already-implemented QQ+/AK value-core
-    guideline when that source coverage is actually sufficient.
+
+def _quick_vs_open_ranges(c):
+    """Deterministic unknown-opener baseline built from public guidance.
+
+    Because quick mode deliberately omits villain position, this is not labeled
+    as an exact solver chart. It keeps the universally published value core,
+    adds the published late-position extensions/bluffs, and uses a BB calling
+    bucket made from the hand classes public sources explicitly identify as
+    good calls (medium pairs, suited connectors and broadways).
     """
+    late = c["position"] in {"CO", "BTN", "SB", "BB", "BTN/SB"}
+    value = expand_range("QQ+ AKs AKo")
+    if late:
+        value |= expand_range("JJ+ AQs+ AKo")
+
+    bluff = set()
+    if c["position"] in {"BTN", "SB", "BTN/SB"}:
+        bluff = {"A2s", "A3s", "A4s", "A5s"}
+
+    # The BB is the main flat-calling exception in deep, no-ante cash theory.
+    bb_calls = set()
+    if c["position"] == "BB":
+        bb_calls |= expand_range(
+            "22+ A2s+ K9s+ Q9s+ J9s+ T8s+ 98s 87s 76s 65s ATo+ KJo+ QJo"
+        )
+        bb_calls -= value
+
+    return value, bluff, bb_calls
+
+
+def quick_preflop_response(data, c, r):
+    """Reduced-input but decisive preflop baseline for replay/study mode."""
     situation = str(data.get("situation", "unopened"))
     pressure = str(data.get("preflop_pressure", "none")).lower()
+    r["quick_preflop"] = True
+    r["bet_pressure"] = pressure
+    source(r, "charts", "threebet", "defense", "rules")
 
     if situation == "limped":
-        r["notes"].append(
-            "Modo rápido: houve limp. O projeto ainda não possui um range de iso-raise/overlimp "
-            "com cobertura suficiente para escolher DESISTIR/PAGAR/AUMENTAR sem inventar estratégia."
+        profile, range_pos = _quick_open_profile(c)
+        if range_pos not in profile["ranges"]:
+            # Even an unsupported alias must still end decisively.
+            r.update(
+                action="FOLD" if c["position"] != "BB" else "CHECK",
+                sizing="Desistir" if c["position"] != "BB" else "Passar no big blind",
+                strategy_status="study_heuristic",
+                profile="Limp · baseline conservador",
+            )
+            return r
+
+        playable = expand_range(profile["ranges"][range_pos])
+        r.update(
+            profile=f"Limp · isolamento pelo range de abertura {profile['name']}",
+            strategy_status="study_heuristic",
+            range=profile["ranges"][range_pos],
+            range_hands=sorted(playable),
         )
+        if c["hand"] in playable:
+            size = min(c["stack"], 4.0)
+            r.update(
+                action="RAISE",
+                sizing=f"Isolar para ~{size:g} BB",
+                raise_to_bb=size,
+            )
+            r["notes"].append(
+                "Modo rápido contra limp: usa o range de abertura documentado da posição "
+                "como limiar conservador para isolar. É uma simplificação, não um chart exato de iso-raise."
+            )
+        else:
+            action = "CHECK" if c["position"] == "BB" else "FOLD"
+            r.update(
+                action=action,
+                sizing="Passar no big blind" if action == "CHECK" else "Desistir",
+            )
+            r["notes"].append(
+                "A mão está fora do range de abertura usado como limiar de isolamento."
+            )
+        return r
+
+    if situation == "facing_raise":
+        if pressure not in {"low", "medium", "high", "allin"}:
+            pressure = "medium"
+        opening = preflop_pressure_representative(c["stack"], pressure)
+        r["open_to_bb"] = opening
+
+        value, bluff, bb_calls = _quick_vs_open_ranges(c)
+        r.update(
+            profile="Vs raise · baseline teórico com opener desconhecido",
+            strategy_status="study_heuristic",
+            range_hands=sorted(value | bluff | bb_calls),
+            range="3-bet valor QQ+/AK; JJ/AQs em posições finais; A2s-A5s como blefes tardios; BB pode pagar classes jogáveis",
+        )
+        r["notes"].append(
+            "A posição de quem abriu não é informada no modo rápido. Portanto a resposta é um baseline "
+            "conservador, não um chart solver específico de posição contra posição."
+        )
+
+        if pressure == "allin":
+            if c["hand"] in expand_range("QQ+ AKs AKo"):
+                r.update(action="CALL", sizing=f"Pagar all-in até {c['stack']:g} BB")
+            else:
+                r.update(action="FOLD", sizing="Desistir contra o all-in")
+            return r
+
+        if c["hand"] in value or c["hand"] in bluff:
+            multiple = 4.0 if c["position"] in {"SB", "BB", "BTN/SB"} else 3.5
+            size = min(c["stack"], round(max(opening * multiple, 2 * opening - 1), 2))
+            r.update(
+                action="RAISE" if size < c["stack"] else "ALL-IN",
+                sizing=(
+                    f"Aumentar para ~{size:g} BB"
+                    if size < c["stack"]
+                    else f"ALL-IN {c['stack']:g} BB"
+                ),
+                raise_to_bb=size,
+            )
+            return r
+
+        if c["hand"] in bb_calls:
+            invested = 1.0
+            call = max(0.0, round(opening - invested, 2))
+            if call < c["stack"]:
+                r.update(action="CALL", sizing=f"Pagar ~{call:g} BB", call_bb=call)
+            else:
+                r.update(action="FOLD", sizing="Desistir; o valor exigiria comprometer todo o stack")
+            return r
+
+        r.update(action="FOLD", sizing="Desistir")
         return r
 
     if situation in {"facing_3bet", "facing_4bet"}:
-        r["notes"].append(
-            "Modo rápido: houve re-raise. Defesa contra 3-bet/4-bet ainda exige ranges específicos; "
-            "o motor não transforma um range de abertura em resposta a re-raise."
+        if pressure not in {"low", "medium", "high", "allin"}:
+            pressure = "medium"
+
+        premium = expand_range("QQ+ AKs AKo")
+        late = c["position"] in {"CO", "BTN", "SB", "BB", "BTN/SB"}
+        calls = expand_range("JJ AQs KQs")
+        if late:
+            calls |= expand_range("99+ AQs KQs")
+
+        r.update(
+            profile="Vs re-raise · baseline conservador 100 BB",
+            strategy_status="study_heuristic",
+            range_hands=sorted(premium | calls),
+            range="QQ+/AK continuam agressivamente; JJ/AQs/KQs e, em posição tardia, 99+ formam a faixa conservadora de continuação",
         )
-        return r
-
-    if situation != "facing_raise":
-        return r
-
-    source(r, "threebet", "rules", "bet_sizing")
-    r["quick_preflop"] = True
-    r["bet_pressure"] = pressure
-
-    if pressure == "allin":
         r["notes"].append(
-            "Modo rápido: o adversário foi all-in. A diretriz QQ+/AK implementada é de 3-bet por valor, "
-            "não um chart completo de call contra shove; portanto este cenário fica sem cobertura."
+            "Sem posição do 3-bettor, o modo rápido usa uma continuação conservadora. "
+            "Ranges exatos de call/4-bet mudam por posição, rake e tamanho."
         )
+
+        if pressure == "allin":
+            if c["hand"] in premium:
+                r.update(action="CALL", sizing=f"Pagar all-in até {c['stack']:g} BB")
+            else:
+                r.update(action="FOLD", sizing="Desistir contra o all-in")
+            return r
+
+        if c["hand"] in premium:
+            representative = preflop_pressure_representative(c["stack"], pressure)
+            size = min(c["stack"], max(10.0, round(representative * 2.5, 2)))
+            r.update(
+                action="RAISE" if size < c["stack"] else "ALL-IN",
+                sizing=(
+                    f"4-bet para ~{size:g} BB"
+                    if size < c["stack"]
+                    else f"ALL-IN {c['stack']:g} BB"
+                ),
+                raise_to_bb=size,
+            )
+        elif c["hand"] in calls and pressure in {"low", "medium"}:
+            r.update(action="CALL", sizing="Pagar o re-raise")
+        else:
+            r.update(action="FOLD", sizing="Desistir")
         return r
 
-    if pressure not in {"low", "medium", "high", "allin"}:
-        r["notes"].append("Selecione BAIXO, MÉDIO, ALTO ou ALL-IN para o raise.")
-        return r
-    opening = preflop_pressure_representative(c["stack"], pressure)
-
-    r["open_to_bb"] = opening
-    if c["mode"] != "cash" or c["stack"] != 100 or c["ante"]:
-        r["notes"].append(
-            "A única resposta rápida contra raise atualmente implementada é a diretriz de 3-bet "
-            "por valor para cash 100 BB sem ante."
-        )
-        return r
-
-    r.update(
-        profile="Resposta rápida · núcleo de 3-bet por valor",
-        strategy_status="expert_guideline",
-        range="QQ+ AKs AKo",
-        range_hands=sorted(expand_range("QQ+ AKs AKo")),
-    )
-    if c["hand"] not in r["range_hands"]:
-        r["strategy_status"] = "not_covered"
-        r["notes"].append(
-            "Fora do núcleo QQ+/AK, faltam ranges completos de call, fold e blefe. "
-            "O modo rápido não inventa uma resposta."
-        )
-        return r
-
-    # With villain position intentionally omitted, do not claim IP/OOP sizing.
-    size = round(max(opening * 3.5, 2 * opening - 1), 2)
-    r.update(
-        action="RAISE",
-        sizing=f"Aumentar por valor para ~{size:g} BB",
-        raise_to_bb=size,
-    )
-    r["notes"].append(
-        f"Modo rápido usa {opening:g} BB, o ponto representativo da faixa {pressure.upper()} calculada pelo seu stack, e 3,5× "
-        "como ponto intermediário entre os tamanhos em posição/fora de posição descritos pela fonte. "
-        "A posição do agressor não foi informada."
-    )
     return r
-
 
 def threebet(data, c, r):
     villain = str(data.get("opener_position", "")).upper()
