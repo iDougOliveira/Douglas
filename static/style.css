@@ -213,3 +213,17 @@ select[name="opener_position"] option{background:#0d1e18}
 .pre-pressure-choice.allin.active{border-color:#ff6d5b;background:#4b201a;color:#ffb1a6}
 .analyze-btn[hidden]{display:none!important}
 @media(max-width:480px){.simple-actions{grid-template-columns:1fr 1fr 1fr}.pre-action{padding:9px 5px;font-size:11px}}
+
+.vision-seat-health{position:absolute;inset:0;pointer-events:none;z-index:5}
+.vision-seat-dot{position:absolute;transform:translate(-50%,-50%);width:13px;height:13px;border-radius:50%;border:2px solid #091a14;box-shadow:0 0 0 1px #ffffff55,0 2px 7px #000b}
+.vision-seat-dot.ok{background:#38d996}
+.vision-seat-dot.partial{background:#f2c94c}
+.vision-seat-dot.error{background:#ef4444}
+.vision-seat-dot.absent{background:#050706}
+.vision-health-legend{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;margin:-2px 0 12px;color:var(--muted);font-size:11px}
+.vision-health-legend span{display:inline-flex;align-items:center;gap:5px}
+.vision-health-legend i{width:9px;height:9px;border-radius:50%;display:inline-block;border:1px solid #ffffff55}
+.vision-health-legend i.ok{background:#38d996}
+.vision-health-legend i.partial{background:#f2c94c}
+.vision-health-legend i.error{background:#ef4444}
+.vision-health-legend i.absent{background:#050706}
