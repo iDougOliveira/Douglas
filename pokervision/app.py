@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.1"
+APP_VERSION = "0.6.2"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -236,7 +236,7 @@ def start_beelink_publisher() -> None:
                     preferred or POKERCOACH_TARGETS[0],
                     last_error or "PokerCoach não encontrado",
                 )
-            time.sleep(0.5)
+            time.sleep(0.2)
 
     threading.Thread(
         target=run,
@@ -475,7 +475,7 @@ class RegionSelector:
 
 
 class PokerVisionApp:
-    REFRESH_MS = 250
+    REFRESH_MS = 125
 
     def __init__(self, root: tk.Tk) -> None:
         self.root = root
@@ -483,8 +483,8 @@ class PokerVisionApp:
         self.running = False
         self.hand_photo: ImageTk.PhotoImage | None = None
         self.board_photo: ImageTk.PhotoImage | None = None
-        self.hand_tracker = StableReading(confirmations=3)
-        self.board_tracker = StableReading(confirmations=3)
+        self.hand_tracker = StableReading(confirmations=2)
+        self.board_tracker = StableReading(confirmations=2)
         self.numeric_tracker = StableReading(confirmations=2)
         self.numeric_lock = threading.Lock()
         self.numeric_result: dict | None = None
@@ -858,7 +858,7 @@ class PokerVisionApp:
         if hand_value is None or board_value is None:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="LENDO · aguardando uma leitura estável por 3 capturas."
+                text="LENDO · aguardando uma leitura estável por 2 capturas."
             )
             return
 
@@ -871,7 +871,7 @@ class PokerVisionApp:
         if not current_confirmed:
             _bridge_publish(running=self.running, confirmed=False)
             self.status.configure(
-                text="CONFIRMANDO · a mesma leitura precisa aparecer em 3 capturas."
+                text="CONFIRMANDO · a mesma leitura precisa aparecer em 2 capturas."
             )
             return
 
@@ -1057,7 +1057,7 @@ class PokerVisionApp:
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
-            text="RECONHECIMENTO ATIVO · confirmando leituras em 3 capturas."
+            text="RECONHECIMENTO ATIVO · confirmando leituras em 2 capturas."
         )
         self.refresh_loop()
 
