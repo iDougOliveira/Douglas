@@ -127,3 +127,12 @@ A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento d
 - Publicação ao PokerCoach/Beelink: 100 ms.
 - OCR de stack/pote continua separado e conservador.
 - Os limiares de confiança do reconhecedor de cartas permanecem inalterados.
+
+
+## V0.6.4 — board robusto contra fichas sobrepostas
+
+- O BOARD é reconhecido pela parte superior do recorte, onde ficam rank e naipe.
+- A parte inferior, onde PokerStars costuma sobrepor fichas e valores, deixa de dominar a detecção.
+- Regiões com proporção incompatível com uma carta são descartadas.
+- Em leitura incerta, a interface mostra quantas regiões foram detectadas e quantas cartas foram reconhecidas.
+- As coordenadas já calibradas continuam válidas.
