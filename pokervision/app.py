@@ -22,7 +22,7 @@ from recognizer import card_text, recognize_board, recognize_hand, street_from_b
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.3"
+APP_VERSION = "0.6.4"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -852,7 +852,9 @@ class PokerVisionApp:
         if board_value is None:
             count = sum(board.occupied_slots)
             label = "TRANSIÇÃO" if count in {1, 2} else "LEITURA INCERTA"
-            self.board_detect.configure(text=f"Detectado: {label}")
+            self.board_detect.configure(
+                text=f"Detectado: {label} · regiões={count} · reconhecidas={len(board.codes)}"
+            )
         else:
             self.board_detect.configure(text=f"Detectado: {format_codes(board_value)}")
             self.board_tracker.observe(board_value)
