@@ -210,6 +210,37 @@ def read_single_number(image: Image.Image) -> dict:
     }
 
 
+def read_pot(image: Image.Image) -> dict:
+    """Read only PokerStars' explicit 'Pote: X BB' total-pot label.
+
+    Do not fall back to an arbitrary BB value. During an action PokerStars can
+    display the previous pot near the chips and the total pot (including the
+    current bet) in the 'Pote:' label. For pot-odds work we want the latter.
+    """
+    text = ocr_text(image, numeric_only=False)
+    normalized = (
+        text.replace("O", "0")
+        .replace("o", "0")
+        .replace("8B", "BB")
+    )
+
+    # Tolerate common OCR variants of "Pote", but require the label itself so
+    # nearby stack/bet/chip values cannot be mistaken for the pot.
+    match = re.search(
+        r"\bP[0O]TE\b\s*[:=-]?\s*(\d[\d.,]*)\s*B[B8]\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if not match:
+        return {"text": text, "value": None, "unit": "bb"}
+
+    return {
+        "text": text,
+        "value": _number(match.group(1)),
+        "unit": "bb",
+    }
+
+
 def read_number_list(image: Image.Image) -> dict:
     text = ocr_text(image, numeric_only=False, multiline=True)
     return {
