@@ -60,7 +60,7 @@ class StrategyTest(unittest.TestCase):
             situation="facing_raise", opener_position="LJ",
             open_to_bb=3, card1="Ts", card2="Th"
         )
-        self.assertEqual(r["action"], "REVISAR")
+        self.assertEqual(r["action"], "SEM COBERTURA")
 
     def test_flop_board_changes_decision(self):
         r = review(
