@@ -201,3 +201,15 @@ select[name="opener_position"] option{background:#0d1e18}
 .pressure-choice.active{border-color:var(--green);background:#123c2d;color:var(--green)}
 .pressure-choice.allin.active{border-color:#ff6d5b;background:#4b201a;color:#ffb1a6}
 @media(max-width:520px){.pressure-choices{grid-template-columns:repeat(2,1fr)}}
+
+
+/* V3.5 — modo rápido: mínimo de cliques */
+.simple-actions{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.pre-action{min-height:48px;font-weight:900;background:#10251d}
+.pre-action.active{background:var(--green);border-color:var(--green);color:#04120d}
+.preflop-pressure-choices .pre-pressure-choice{display:flex;flex-direction:column;align-items:center;gap:2px;padding:10px 6px;border-radius:9px;background:#11271f}
+.pre-pressure-choice b{font-size:12px}.pre-pressure-choice small{font-size:10px;color:var(--muted)}
+.pre-pressure-choice.active{border-color:var(--green);background:#123c2d;color:var(--green)}
+.pre-pressure-choice.allin.active{border-color:#ff6d5b;background:#4b201a;color:#ffb1a6}
+.analyze-btn[hidden]{display:none!important}
+@media(max-width:480px){.simple-actions{grid-template-columns:1fr 1fr 1fr}.pre-action{padding:9px 5px;font-size:11px}}
