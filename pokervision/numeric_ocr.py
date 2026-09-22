@@ -187,14 +187,26 @@ def read_blinds(image: Image.Image) -> dict:
 
 
 def read_single_number(image: Image.Image) -> dict:
-    # Do not whitelist here: the BB suffix is valuable because some poker
-    # clients already display stack/pot directly in big blinds.
+    # Prefer the number immediately before BB. This avoids reading digits
+    # embedded in nicknames such as "iDoug98 117,2 BB".
     text = ocr_text(image, numeric_only=False)
-    values = extract_numbers(text)
+    normalized = text.replace("O", "0").replace("o", "0")
+    bb_matches = re.findall(
+        r"(\d[\d.,]*)\s*B[B8]\b",
+        normalized,
+        flags=re.IGNORECASE,
+    )
+    if bb_matches:
+        value = _number(bb_matches[-1])
+        return {"text": text, "value": value, "unit": "bb"}
+
+    values = extract_numbers(normalized)
+    # For stack/pot crops, the relevant display value is normally the last
+    # numeric token if there is no explicit BB suffix.
     return {
         "text": text,
-        "value": values[0] if values else None,
-        "unit": "bb" if re.search(r"\\bBB\\b", text, re.IGNORECASE) else "chips",
+        "value": values[-1] if values else None,
+        "unit": "chips",
     }
 
 
@@ -203,5 +215,5 @@ def read_number_list(image: Image.Image) -> dict:
     return {
         "text": text,
         "values": extract_numbers(text),
-        "unit": "bb" if re.search(r"\\bBB\\b", text, re.IGNORECASE) else "chips",
+        "unit": "bb" if re.search(r"\bBB\b", text, re.IGNORECASE) else "chips",
     }
