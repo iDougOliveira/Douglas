@@ -602,9 +602,11 @@ function applyVisionNumericState(state){
   if(!visionEnabled || !state?.running) return;
 
   const f=$('#reviewForm').elements;
-  const heroBB=Number(state?.hero_stack_bb||0);
-  const potBB=Number(state?.pot_bb||0);
-  const signature=JSON.stringify([heroBB||null,potBB||null]);
+  const heroRaw=state?.hero_stack_bb;
+  const potRaw=state?.pot_bb;
+  const heroBB=heroRaw==null?0:Number(heroRaw);
+  const potBB=potRaw==null?0:Number(potRaw);
+  const signature=JSON.stringify([heroRaw??null,potRaw??null]);
 
   const metrics=[];
   if(heroBB>0) metrics.push(`Meu stack ${heroBB.toFixed(1)} BB`);
@@ -625,8 +627,16 @@ function applyVisionNumericState(state){
     updatePressureLabels();
     changed=true;
   }
-  if(potBB>0 && Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
-    f.pot_bb.value=potBB.toFixed(2);
+  if(potBB>0){
+    if(Math.abs(Number(f.pot_bb.value||0)-potBB)>0.01){
+      f.pot_bb.value=potBB.toFixed(2);
+      updatePressureLabels();
+      changed=true;
+    }
+  }else if(potRaw===null && Number(f.pot_bb.value||0)>0){
+    // A calibrated pot region was read, but no current "Pote: X BB" label
+    // was confirmed. Clear the old value instead of analyzing a stale pot.
+    f.pot_bb.value='0';
     updatePressureLabels();
     changed=true;
   }
