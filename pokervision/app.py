@@ -933,7 +933,9 @@ class PokerVisionApp:
             self._round_value(data.get("ante")),
             self._round_value(data.get("hero_stack_chips")),
             tuple(self._round_value(v) for v in data.get("table_stacks", [])),
+            tuple(self._round_value(v) for v in data.get("table_stacks_bb", [])),
             self._round_value(data.get("pot_chips")),
+            self._round_value(data.get("pot_bb")),
         )
 
     def _numeric_worker(self, regions: dict) -> None:
