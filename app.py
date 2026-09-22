@@ -111,6 +111,11 @@ def normalize_vision_payload(data: dict) -> dict:
         "hero_stack_chips": optional_nonnegative_number(data.get("hero_stack_chips")),
         "hero_stack_bb": optional_nonnegative_number(data.get("hero_stack_bb")),
         "table_stacks": clean_stacks,
+        "table_stacks_bb": [
+            optional_nonnegative_number(value)
+            for value in (data.get("table_stacks_bb") or [])
+            if value is not None and value != ""
+        ],
         "effective_stack_bb": optional_nonnegative_number(data.get("effective_stack_bb")),
         "pot_chips": optional_nonnegative_number(data.get("pot_chips")),
         "pot_bb": optional_nonnegative_number(data.get("pot_bb")),
