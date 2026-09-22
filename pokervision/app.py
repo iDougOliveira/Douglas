@@ -19,10 +19,10 @@ import mss
 from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
-from numeric_ocr import OCR_ERROR, read_single_number
+from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 
 
-APP_VERSION = "0.6.0"
+APP_VERSION = "0.6.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -924,6 +924,8 @@ class PokerVisionApp:
                 result["error"] = OCR_ERROR
             else:
                 if regions.get("hero_stack"):
+                    result["hero_stack_bb"] = None
+                    result["hero_stack_chips"] = None
                     hero_read = read_single_number(grab_box(regions["hero_stack"]))
                     result["hero_text"] = hero_read["text"]
                     if hero_read.get("unit") == "bb":
@@ -932,12 +934,14 @@ class PokerVisionApp:
                         result["hero_stack_chips"] = hero_read["value"]
 
                 if regions.get("pot"):
-                    pot_read = read_single_number(grab_box(regions["pot"]))
+                    # Explicitly publish None when the current crop is unreadable.
+                    # This prevents the bridge/site from silently reusing an old pot.
+                    result["pot_bb"] = None
+                    result["pot_chips"] = None
+                    pot_read = read_pot(grab_box(regions["pot"]))
                     result["pot_text"] = pot_read["text"]
-                    if pot_read.get("unit") == "bb":
+                    if pot_read.get("unit") == "bb" and pot_read.get("value") is not None:
                         result["pot_bb"] = pot_read["value"]
-                    else:
-                        result["pot_chips"] = pot_read["value"]
         except Exception as exc:
             result = {"error": str(exc)}
         finally:
