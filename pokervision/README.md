@@ -108,3 +108,12 @@ Conversões automáticas:
 - stack efetivo = min(stack do hero, maior stack adversário detectado) / big blind.
 
 A leitura numérica exige Tesseract OCR instalado no Windows. O reconhecimento de cartas continua independente do Tesseract.
+
+
+## V0.6.2 — reconhecimento mais rápido
+
+- Captura visual de mão/board: 125 ms.
+- Confirmação: 2 leituras idênticas antes de publicar.
+- Envio ao PokerCoach/Beelink: 200 ms.
+- OCR de stack/pote permanece em ~1 s para não aumentar o custo do Tesseract.
+- Limiares de confiança do reconhecedor de cartas não foram relaxados.
