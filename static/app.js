@@ -398,7 +398,7 @@ $$('.pressure-choice').forEach(b=>b.onclick=()=>{
   b.classList.add('active');
   f.post_action.value='facing_bet';
   f.bet_pressure.value=b.dataset.value;
-  $$$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value==='facing_bet'));
+  $$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value==='facing_bet'));
   $('#betPressure').hidden=false;
   invalidateReview();
   scheduleAnalysis();
@@ -469,7 +469,7 @@ function syncContext(){
 
   const facingBet=postflop && f.post_action.value==='facing_bet';
   if($('#betPressure')) $('#betPressure').hidden=!facingBet;
-  $$$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value===f.post_action.value));
+  $$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value===f.post_action.value));
   if(!facingBet){
     f.bet_pressure.value='none';
     f.call_bb.value=0;
