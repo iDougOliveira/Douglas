@@ -127,7 +127,7 @@ def preflop_order(n):
 
 def result_base(c):
     return {"engine_version": ENGINE_VERSION, "hand": c["hand"], "position": c["position"], "player_count": c["players"],
-            "action": "REVISAR", "sizing": "Cenário sem cobertura", "range": "Não disponível",
+            "action": "SEM COBERTURA", "sizing": "Cenário sem cobertura estratégica", "range": "Não disponível",
             "range_hands": [], "notes": [], "sources": [], "strategy_status": "not_covered", "profile": "Sem perfil compatível",
             "raise_to_bb": None, "additional_bb": None, "disclaimer": "Referência educacional para revisão. Não é um solver GTO nem uma garantia de lucro."}
 
