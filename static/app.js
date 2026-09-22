@@ -51,6 +51,10 @@ let visionLastNumericSignature='';
 let visionPendingPlayerCount=null;
 let visionPendingInactiveSeats=null;
 let visionPendingMaxSeats=null;
+let visionPendingConfirmedAt=0;
+let visionTableState='disabled';
+let visionInactivePoints=[];
+let visionLastState=null;
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
 
@@ -231,6 +235,76 @@ function seatLayout(count){
   return SEAT_LAYOUTS[count]||SEAT_LAYOUTS[8];
 }
 
+
+function nearestInactiveSlots(maxSeats,points){
+  const layout=seatLayout(maxSeats);
+  const used=new Set();
+  (Array.isArray(points)?points:[]).forEach(point=>{
+    if(!Array.isArray(point)||point.length!==2) return;
+    const px=Number(point[0])*100;
+    const py=Number(point[1])*100;
+    let best=-1;
+    let bestDistance=Infinity;
+    layout.forEach(([x,y],i)=>{
+      if(used.has(i)) return;
+      const dx=(x-px)/100;
+      const dy=(y-py)/100;
+      const distance=dx*dx+dy*dy;
+      if(distance<bestDistance){
+        bestDistance=distance;
+        best=i;
+      }
+    });
+    if(best>=0 && bestDistance<=0.055) used.add(best);
+  });
+  return used;
+}
+
+function renderVisionHealthOverlay(){
+  const layer=$('#visionSeatHealth');
+  if(!layer) return;
+  layer.innerHTML='';
+
+  const maxSeats=Number(visionPendingMaxSeats||playerCount||8);
+  if(!SEAT_LAYOUTS[maxSeats]) return;
+
+  const inactive=nearestInactiveSlots(maxSeats,visionInactivePoints);
+  const state=visionLastState||{};
+  const tableError=visionTableState==='error';
+  const tableConfirmed=visionTableState==='confirmed';
+  const heroComplete=tableConfirmed
+    && Boolean(state.confirmed)
+    && Array.isArray(state.hand)
+    && state.hand.length===2
+    && Number(state.hero_stack_bb||0)>0;
+
+  seatLayout(maxSeats).forEach(([x,y],i)=>{
+    const dot=document.createElement('span');
+    let health='partial';
+    let label='Informações parciais ou aguardando atualização';
+
+    if(inactive.has(i)){
+      health='absent';
+      label='Ausente ou lugar vazio';
+    }else if(tableError){
+      health='error';
+      label='Erro na leitura automática; modo básico continua ativo';
+    }else if(i===0 && heroComplete){
+      health='ok';
+      label='Leitura completa do seu assento';
+    }else if(tableConfirmed){
+      health='partial';
+      label='Assento ativo; leitura ainda parcial';
+    }
+
+    dot.className=`vision-seat-dot ${health}`;
+    dot.style.left=x+'%';
+    dot.style.top=y+'%';
+    dot.title=label;
+    layer.appendChild(dot);
+  });
+}
+
 function renderTable(){
   if(!positionOrder[playerCount]) return;
   const seats=$('#seats');
@@ -275,6 +349,7 @@ function renderTable(){
     b.setAttribute('aria-pressed',String(selected));
   });
   renderPositionLegend();
+  renderVisionHealthOverlay();
   syncContext();
 }
 
@@ -685,15 +760,22 @@ function applyVisionNumericState(state){
 function applyVisionTableState(state){
   if(!visionEnabled || !state?.running) return;
 
+  visionLastState=state;
+  visionTableState=String(state?.table_scan_state||'disabled');
+  visionInactivePoints=Array.isArray(state?.inactive_points)?state.inactive_points:[];
   const count=Number(state?.detected_player_count||0);
   const inactive=Number(state?.inactive_seats??0);
   const maxSeats=Number(state?.table_max_seats||0);
+  const scanAt=Number(state?.table_scan_at||0);
+  const age=scanAt>0 ? Math.max(0,(Date.now()/1000)-scanAt) : Infinity;
+  const fresh=visionTableState==='confirmed' && age<=6;
   const meter=$('#visionPlayers');
 
-  if(Number.isInteger(count) && count>=2 && count<=10){
+  if(fresh && Number.isInteger(count) && count>=2 && count<=10){
     visionPendingPlayerCount=count;
     visionPendingInactiveSeats=Number.isFinite(inactive)?inactive:null;
     visionPendingMaxSeats=Number.isInteger(maxSeats)?maxSeats:null;
+    visionPendingConfirmedAt=scanAt;
     if(meter){
       const inactiveText=visionPendingInactiveSeats!=null
         ? ` · ${visionPendingInactiveSeats} ausente(s)/vazio(s)`
@@ -701,17 +783,33 @@ function applyVisionTableState(state){
       const maxText=visionPendingMaxSeats
         ? ` de ${visionPendingMaxSeats}`
         : '';
-      meter.textContent=`Próxima mão: ${count} jogadores${maxText}${inactiveText}`;
+      meter.textContent=`Próxima mão: ${count} jogadores${maxText}${inactiveText} · leitura confirmada`;
       meter.classList.add('ready');
     }
   }else if(meter){
-    meter.textContent='Jogadores: aguardando 3 leituras estáveis da mesa';
     meter.classList.remove('ready');
+    if(visionTableState==='error'){
+      meter.textContent=`Jogadores: ERRO na automação · mantendo ${playerCount} · modo básico ativo`;
+    }else if(visionTableState==='partial'){
+      meter.textContent=`Jogadores: leitura parcial · mantendo ${playerCount} · modo básico ativo`;
+    }else if(visionTableState==='disabled'){
+      meter.textContent=`Jogadores: automação da mesa desativada · usando ${playerCount}`;
+    }else{
+      meter.textContent=`Jogadores: leitura desatualizada/aguardando · mantendo ${playerCount}`;
+    }
   }
+
+  renderVisionHealthOverlay();
 }
 
 function applyPendingPlayerCountForNewHand(){
   const count=Number(visionPendingPlayerCount||0);
+  const age=visionPendingConfirmedAt>0
+    ? Math.max(0,(Date.now()/1000)-visionPendingConfirmedAt)
+    : Infinity;
+
+  // Fail-safe: an old/partial/error read never changes the next hand.
+  if(visionTableState!=='confirmed' || age>6) return false;
   if(!Number.isInteger(count) || count<2 || count>10) return false;
   if(!positionOrder?.[count]) return false;
   if(playerCount===count) return false;
@@ -792,6 +890,7 @@ async function pollPokerVision(){
     clearTimeout(timeout);
     if(!response.ok) throw new Error('bridge indisponível');
     const state=await response.json();
+    visionLastState=state;
 
     if(state.connected && state.running && visionEnabled){
       applyVisionNumericState(state);
@@ -799,7 +898,9 @@ async function pollPokerVision(){
     }
 
     if(!state.connected){
-      setVisionBar('disconnected','PokerVision ainda não enviou dados ao Beelink');
+      visionTableState='error';
+      renderVisionHealthOverlay();
+      setVisionBar('disconnected','PokerVision ainda não enviou dados ao Beelink · modo básico disponível');
     }else if(!visionEnabled){
       setVisionBar('paused','PokerVision conectado · automático pausado');
     }else if(!state.running){
@@ -812,6 +913,10 @@ async function pollPokerVision(){
       applyVisionState(state);
     }
   }catch(e){
+    visionTableState='error';
+    renderVisionHealthOverlay();
+    const meter=$('#visionPlayers');
+    if(meter) meter.textContent=`Jogadores: sem sincronização · mantendo ${playerCount} · modo básico ativo`;
     if(visionEnabled) setVisionBar('disconnected','Sem sincronização com PokerVision · manual disponível');
   }finally{
     visionTimer=setTimeout(pollPokerVision,500);
