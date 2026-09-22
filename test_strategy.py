@@ -49,20 +49,41 @@ class StrategyTest(unittest.TestCase):
         self.assertEqual(r["raise_to_bb"], 10)
 
     def test_quick_preflop_minimal_inputs(self):
-        r = review(
-            mode="cash", players=6, position="BTN", stack=100,
+        premium = review(
+            mode="cash", player_count=9, position="SB", stack_bb=100,
             card1="As", card2="Kh", situation="facing_raise",
             quick_preflop=True, preflop_pressure="medium",
         )
-        self.assertEqual(r["action"], "RAISE")
-        self.assertTrue(r["quick_preflop"])
+        self.assertEqual(premium["action"], "RAISE")
+        self.assertTrue(premium["quick_preflop"])
 
-        uncovered = review(
-            mode="cash", players=6, position="BTN", stack=100,
-            card1="9s", card2="8s", situation="facing_raise",
+        weak = review(
+            mode="cash", player_count=9, position="SB", stack_bb=100,
+            card1="Qd", card2="4c", situation="facing_raise",
             quick_preflop=True, preflop_pressure="medium",
         )
-        self.assertEqual(uncovered["action"], "SEM COBERTURA")
+        self.assertEqual(weak["action"], "FOLD")
+
+        bb_call = review(
+            mode="cash", player_count=9, position="BB", stack_bb=100,
+            card1="Ts", card2="9s", situation="facing_raise",
+            quick_preflop=True, preflop_pressure="low",
+        )
+        self.assertEqual(bb_call["action"], "CALL")
+
+        reraised = review(
+            mode="cash", player_count=9, position="BTN", stack_bb=100,
+            card1="Qd", card2="4c", situation="facing_3bet",
+            quick_preflop=True, preflop_pressure="medium",
+        )
+        self.assertEqual(reraised["action"], "FOLD")
+
+        limped = review(
+            mode="cash", player_count=9, position="SB", stack_bb=100,
+            card1="As", card2="Kh", situation="limped",
+            quick_preflop=True,
+        )
+        self.assertEqual(limped["action"], "RAISE")
 
     def test_threebet_value_core(self):
         r = review(
