@@ -214,13 +214,36 @@ def decide(data):
     return r
 
 def pressure_ranges(stack):
-    stack = max(0.0, float(stack or 0))
-    low_max = min(30.0, stack * 0.30)
-    medium_max = min(100.0, stack * 0.60)
+    raw = max(0.0, float(stack or 0))
+    if raw <= 0:
+        return {
+            "low": (0.0, 0.0),
+            "medium": (0.0, 0.0),
+            "high": (0.0, 0.0),
+            "allin": (0.0, 0.0),
+        }
+
+    whole = abs(raw - round(raw)) < 1e-9 and raw >= 10
+    step = 1.0 if whole else 0.1
+    round_boundary = (
+        (lambda value: float(round(value)))
+        if whole
+        else (lambda value: round(value, 1))
+    )
+    stack = float(round(raw)) if whole else round(raw, 1)
+
+    low_max = round_boundary(min(30.0, stack * 0.30))
+    medium_max = round_boundary(min(100.0, stack * 0.60))
+
+    low_min = min(step, stack)
+    medium_min = min(stack, round_boundary(low_max + step))
+    high_min = min(stack, round_boundary(medium_max + step))
+    high_max = max(high_min, round_boundary(stack - step))
+
     return {
-        "low": (min(1.0, stack), max(min(1.0, stack), low_max)),
-        "medium": (low_max, max(low_max, medium_max)),
-        "high": (medium_max, stack),
+        "low": (low_min, max(low_min, low_max)),
+        "medium": (medium_min, max(medium_min, medium_max)),
+        "high": (high_min, high_max),
         "allin": (stack, stack),
     }
 
