@@ -369,6 +369,7 @@ def postflop(data,c,r):
     }
     if call <= 0 and pressure in pressure_mid:
         call = round(c["stack"] * pressure_mid[pressure], 4)
+        r["call_bb"] = call
         r["bet_pressure"] = pressure
         r["notes"].append(
             f"Pressão selecionada: {pressure_labels[pressure]}. "
