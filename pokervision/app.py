@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.8.0"
+APP_VERSION = "0.8.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -253,6 +253,36 @@ def start_beelink_publisher() -> None:
                         if 200 <= response.status < 300:
                             preferred = base
                             delivered = True
+                            try:
+                                reply = json.loads(
+                                    response.read().decode("utf-8") or "{}"
+                                )
+                                server_config = reply.get("config", {})
+                                max_seats = int(
+                                    server_config.get("table_max_seats", 9)
+                                )
+                                if 2 <= max_seats <= 10:
+                                    current = int(
+                                        _bridge_snapshot().get(
+                                            "table_max_seats", 9
+                                        ) or 9
+                                    )
+                                    if max_seats != current:
+                                        _bridge_publish_table({
+                                            "table_max_seats": max_seats,
+                                            "detected_player_count": None,
+                                            "inactive_seats": None,
+                                            "table_scan_state": "waiting",
+                                            "table_scan_at": 0.0,
+                                            "inactive_points": [],
+                                            "seat_observations": [],
+                                        })
+                                        LOGGER.info(
+                                            "TABLE_CONFIG max_seats=%s source=PokerCoach",
+                                            max_seats,
+                                        )
+                            except (ValueError, TypeError, json.JSONDecodeError):
+                                pass
                             _set_delivery_status(True, base, "sincronizado com PokerCoach")
                             break
                         last_error = f"HTTP {response.status}"
@@ -696,24 +726,9 @@ class PokerVisionApp:
 
         ttk.Label(
             finance_actions,
-            text="Lugares máx.:",
+            text="Lugares da mesa: controlado pelo site PokerCoach",
             style="Muted.TLabel",
         ).pack(side="left", padx=(10, 4))
-        self.table_max_var = tk.StringVar(
-            value=str(self.config.get("table_max_seats", 9))
-        )
-        self.table_max_combo = ttk.Combobox(
-            finance_actions,
-            width=3,
-            state="readonly",
-            values=tuple(str(value) for value in range(2, 11)),
-            textvariable=self.table_max_var,
-        )
-        self.table_max_combo.pack(side="left")
-        self.table_max_combo.bind(
-            "<<ComboboxSelected>>",
-            self.on_table_max_changed,
-        )
 
         coords = ttk.Frame(outer, style="Card.TFrame", padding=12)
         coords.pack(fill="x", pady=(0, 14))
@@ -834,23 +849,7 @@ class PokerVisionApp:
         ).pack(side="right", padx=(10, 0))
 
     def on_table_max_changed(self, _event=None) -> None:
-        try:
-            value = int(self.table_max_var.get())
-        except (TypeError, ValueError):
-            value = 9
-        value = max(2, min(10, value))
-        self.config["table_max_seats"] = value
-        save_config(self.config)
-        self.table_tracker.reset()
-        _bridge_publish_table({
-            "detected_player_count": None,
-            "inactive_seats": None,
-            "table_max_seats": value,
-            "table_scan_confidence": "",
-        })
-        self.table_readout.configure(
-            text=f"JOGADORES: aguardando 3 leituras estáveis · mesa máx. {value}"
-        )
+        return
 
     def select_region(self, key: str) -> None:
         labels = {
@@ -1093,7 +1092,7 @@ class PokerVisionApp:
 
         self.last_table_scan = now
         self.table_pending = True
-        max_seats = int(self.config.get("table_max_seats", 9) or 9)
+        max_seats = int(_bridge_snapshot().get("table_max_seats", 9) or 9)
         threading.Thread(
             target=self._table_worker,
             args=(region, max_seats),
@@ -1371,7 +1370,7 @@ class PokerVisionApp:
         LOGGER.info(
             "MONITOR start table=%s max_seats=%s",
             bool(self.config.get("table")),
-            self.config.get("table_max_seats", 9),
+            _bridge_snapshot().get("table_max_seats", 9),
         )
         self.refresh_loop()
 
@@ -1402,7 +1401,9 @@ class PokerVisionApp:
         for key in CALIBRATION_KEYS:
             region = self.config.get(key)
             config_summary[key] = bool(region)
-        config_summary["table_max_seats"] = self.config.get("table_max_seats", 9)
+        config_summary["table_max_seats"] = _bridge_snapshot().get(
+            "table_max_seats", 9
+        )
 
         payload = {
             "PokerVision": APP_VERSION,
