@@ -42,6 +42,8 @@ let reviewRevision=0;
 let autoTimer=null;
 let positionOrder={};
 let playerCount=8;
+let tableMaxSeats=9;
+let gameType='cash';
 let dealerSeat=0;
 let activeCardSlot='card1';
 let visionEnabled=true;
@@ -58,6 +60,21 @@ let visionSeatObservations=[];
 let visionLastState=null;
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
+
+const GAME_TYPES={
+  cash:{
+    mode:'cash',
+    hint:'Cash game · sem ICM.'
+  },
+  sitngo:{
+    mode:'tournament',
+    hint:'Sit & Go · usa a base de torneio atual; ICM especializado ainda não está modelado.'
+  },
+  mtt:{
+    mode:'tournament',
+    hint:'Torneio MTT · usa a base de torneio atual; bolha/pay jumps ainda exigem modelagem de ICM.'
+  }
+};
 
 const ACTION_LABELS={
   'FOLD':'DESISTIR',
@@ -301,9 +318,16 @@ function renderVisionHealthOverlay(){
       health='partial';
       label='Jogador desconectado; último dado conhecido mantido';
     }else if(obs && Number(obs.stack_bb)>=0){
-      health='ok';
       const name=obs.name?String(obs.name):`Assento ${i+1}`;
-      label=`${name} · stack ${Number(obs.stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
+      const stack=Number(obs.stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2});
+      const actionComplete=Boolean(obs.action && obs.action!=='unknown');
+      if(obs.name && actionComplete){
+        health='ok';
+        label=`${name} · stack ${stack} BB · ação ${obs.action}`;
+      }else{
+        health='partial';
+        label=`${name} · stack ${stack} BB · ação ainda não mapeada`;
+      }
     }else if(i===0 && heroComplete){
       health='ok';
       label=`Você · stack ${Number(state.hero_stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
@@ -366,6 +390,80 @@ function renderTable(){
   renderPositionLegend();
   renderVisionHealthOverlay();
   syncContext();
+}
+
+function selectGameType(value){
+  const cfg=GAME_TYPES[value];
+  if(!cfg) return;
+  gameType=value;
+  const f=$('#reviewForm').elements;
+  f.game_type.value=value;
+  f.mode.value=cfg.mode;
+  $('.game-type').forEach(button=>{
+    button.classList.toggle('active',button.dataset.value===value);
+    button.setAttribute('aria-pressed',String(button.dataset.value===value));
+  });
+  const hint=$('#gameTypeHint');
+  if(hint) hint.textContent=cfg.hint;
+  try{localStorage.setItem('pokercoach.gameType',value)}catch(e){}
+  invalidateReview();
+  scheduleAnalysis();
+}
+
+function initGameType(){
+  let saved='cash';
+  try{saved=localStorage.getItem('pokercoach.gameType')||'cash'}catch(e){}
+  if(!GAME_TYPES[saved]) saved='cash';
+  selectGameType(saved);
+  $('.game-type').forEach(button=>{
+    if(button.disabled) return;
+    button.onclick=()=>selectGameType(button.dataset.value);
+  });
+}
+
+function renderTableCapacityControls(){
+  const controls=$('#tableCapacity');
+  if(!controls) return;
+  controls.innerHTML='';
+  for(let count=2;count<=10;count++){
+    const b=document.createElement('button');
+    b.type='button';
+    b.className='table-capacity';
+    b.dataset.count=String(count);
+    b.textContent=String(count);
+    const selected=count===tableMaxSeats;
+    b.classList.toggle('active',selected);
+    b.setAttribute('aria-pressed',String(selected));
+    b.onclick=()=>chooseTableCapacity(count);
+    controls.appendChild(b);
+  }
+}
+
+async function chooseTableCapacity(count){
+  if(!Number.isInteger(count)||count<2||count>10) return;
+  try{
+    const config=await api('/api/vision/config',{table_max_seats:count});
+    tableMaxSeats=Number(config.table_max_seats)||count;
+    if(playerCount>tableMaxSeats) choosePlayerCount(tableMaxSeats);
+    renderTableCapacityControls();
+    try{localStorage.setItem('pokercoach.tableMaxSeats',String(tableMaxSeats))}catch(e){}
+  }catch(e){
+    const hint=$('#tableHint');
+    if(hint) hint.textContent='Não foi possível atualizar a capacidade da mesa.';
+  }
+}
+
+async function initVisionConfig(){
+  try{
+    const config=await api('/api/vision/config');
+    tableMaxSeats=Number(config.table_max_seats)||9;
+  }catch(e){
+    try{
+      const saved=Number(localStorage.getItem('pokercoach.tableMaxSeats'));
+      if(saved>=2&&saved<=10) tableMaxSeats=saved;
+    }catch(_e){}
+  }
+  renderTableCapacityControls();
 }
 
 function choosePlayerCount(count){
@@ -782,6 +880,10 @@ function applyVisionTableState(state){
   const count=Number(state?.detected_player_count||0);
   const inactive=Number(state?.inactive_seats??0);
   const maxSeats=Number(state?.table_max_seats||0);
+  if(Number.isInteger(maxSeats)&&maxSeats>=2&&maxSeats<=10&&maxSeats!==tableMaxSeats){
+    tableMaxSeats=maxSeats;
+    renderTableCapacityControls();
+  }
   const scanAt=Number(state?.table_scan_at||0);
   const age=scanAt>0 ? Math.max(0,(Date.now()/1000)-scanAt) : Infinity;
   const fresh=visionTableState==='confirmed' && age<=6;
@@ -1081,5 +1183,7 @@ $('#sessionForm').played_at.value=new Date().toISOString().slice(0,10);
 ['card1','card2',...boardFields].forEach(renderCardSlot);
 updateStreet();
 updatePressureLabels();
+initGameType();
 initTable();
+initVisionConfig();
 initPokerVision();
