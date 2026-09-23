@@ -172,7 +172,17 @@ def normalized_seat_observations(value: object) -> list[dict]:
                     "at": optional_nonnegative_number(event.get("at")),
                 })
 
+        seat_index = item.get("seat_index")
+        if seat_index is not None:
+            try:
+                seat_index = int(seat_index)
+            except (TypeError, ValueError):
+                seat_index = None
+        if seat_index is not None and not (0 <= seat_index <= 9):
+            seat_index = None
+
         clean.append({
+            "seat_index": seat_index,
             "x": x,
             "y": y,
             "name": str(item.get("name", ""))[:32],
