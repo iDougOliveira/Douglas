@@ -415,6 +415,14 @@ def analyze_table(image, max_seats: int = 9) -> dict:
     confidence = "alta" if evidence_words >= max(5, max_seats) else "média"
     raw = " | ".join(line["text"] for line in lines)[:320]
     seat_observations = build_seat_observations(lines, all_lines)
+    table_pot_bb = None
+    for line in all_lines:
+        if "POTE" not in fold_text(str(line.get("text", ""))):
+            continue
+        value = parse_stack_bb(str(line.get("text", "")))
+        if value is not None:
+            table_pot_bb = value
+            break
 
     return {
         "valid": valid,
@@ -426,6 +434,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
             for x, y in inactive_clusters[:10]
         ],
         "seat_observations": seat_observations,
+        "table_pot_bb": table_pot_bb,
         "evidence_words": evidence_words,
         "confidence": confidence if valid else "baixa",
         "raw_text": raw,
