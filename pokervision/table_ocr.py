@@ -429,7 +429,17 @@ def analyze_table(image, max_seats: int = 9) -> dict:
             inactive_points.append((float(line["x"]), float(line["y"])))
 
     inactive_clusters = cluster_points(inactive_points)
-    inactive_count = min(len(inactive_clusters), max_seats)
+    inactive_seat_indices = []
+    for x, y in inactive_clusters:
+        seat_index, seat_distance = nearest_seat_index(x, y, max_seats)
+        if (
+            seat_index is not None
+            and seat_distance <= 0.145
+            and seat_index not in inactive_seat_indices
+        ):
+            inactive_seat_indices.append(int(seat_index))
+    inactive_seat_indices.sort()
+    inactive_count = min(len(inactive_seat_indices), max_seats)
     player_count = infer_player_count(max_seats, inactive_count)
 
     # Do not publish a count from a crop where OCR effectively saw no seat
@@ -458,6 +468,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
         "player_count": player_count if valid else None,
         "max_seats": max_seats,
         "inactive_seats": inactive_count,
+        "inactive_seat_indices": inactive_seat_indices,
         "inactive_points": [
             [round(float(x), 4), round(float(y), 4)]
             for x, y in inactive_clusters[:10]
