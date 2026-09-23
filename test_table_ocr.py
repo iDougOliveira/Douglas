@@ -31,6 +31,9 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertIsNone(table_ocr.infer_player_count(9, 9))
         self.assertIsNone(table_ocr.infer_player_count(2, 2))
 
+    def test_explicit_pot_is_not_a_stack(self):
+        self.assertEqual(table_ocr.parse_stack_bb("Pote: 6,62 BB"), 6.62)
+
     def test_stack_parser(self):
         self.assertEqual(table_ocr.parse_stack_bb("89,7 BB"), 89.7)
         self.assertEqual(table_ocr.parse_stack_bb("Player 216,9 BB"), 216.9)
