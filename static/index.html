@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.16.1">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.17.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.16.1 · FAIL-SAFE</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.17.0 · SPIN ENGINE + FAIL-SAFE</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -17,6 +17,7 @@
           <select id="gameTypeSelect" aria-label="Tipo de jogo">
             <option value="cash">Cash</option>
             <option value="sitngo">Sit & Go</option>
+            <option value="spin">Spin & Go</option>
             <option value="mtt">Torneio MTT</option>
           </select>
         </label>
@@ -132,7 +133,7 @@
   <section id="bankroll" class="panel">
     <form id="sessionForm" class="grid">
       <label>Data<input name="played_at" type="date" required></label>
-      <label>Formato<select name="mode"><option value="cash">Cash</option><option value="tournament">Torneio</option></select></label>
+      <label>Formato<select name="mode"><option value="cash">Cash</option><option value="tournament">Torneio</option><option value="spin">Spin & Go</option></select></label>
       <label>Limite/torneio<input name="stakes" placeholder="NL10 ou $5 MTT" required></label>
       <label>Entrada<input name="buy_in" type="number" min="0" step="0.01" required></label>
       <label>Saída/prêmio<input name="cash_out" type="number" min="0" step="0.01" required></label>
@@ -141,9 +142,9 @@
     </form>
     <div id="summary" class="summary"></div>
   </section>
-  <section id="about" class="panel"><div class="card"><h2>Motor 3.7 — base e cobertura</h2>
+  <section id="about" class="panel"><div class="card"><h2>Motor 3.17 — base e cobertura</h2>
     <p>As regras antigas foram substituídas por consultas determinísticas aos resumos públicos de ranges, diretrizes de especialistas e cálculos de pot odds. O motor não executa um solver nem aprende sozinho.</p>
-    <ul><li>Cash 6-max, 100 BB: abertura por posição; 2,5 BB fora dos blinds.</li><li>Cash 8-max: resumo de abertura e tamanho de 3 BB da imagem publicada. Aplicação limitada a 100 BB por decisão do app; o texto não informa stack nem rake. É uma referência adaptada.</li><li>Torneio 9-max: resumos de abertura a 75 e 100 BB. A 75 BB, o resumo não informa o tamanho do raise.</li><li>Torneio 8-max, 10 BB: resumo de stack curto. Ações agrupadas permanecem “MISTA”, sem frequência inventada.</li><li>Cash 100 BB, sem ante: diretriz de 3-bet com QQ+/AK contra um único open de 2 a 5 BB, sem callers. Considera posição do agressor e posição relativa no pós-flop. Não é um range completo de defesa.</li><li>Pós-flop: pot odds; decisão de call/fold por EV apenas em cash, contra um adversário, com equity informada e encerramento de todas as apostas, sem side pots nem rake adicional.</li></ul>
+    <ul><li><b>Spin & Go:</b> motor separado para 3-handed e heads-up, com stack efetivo, ranges/sizings pré-flop publicados, limps HU/SB, shove/fold curto e transição automática 3→2 jogadores. Spots em que o texto público não discrimina frequências continuam marcados como cobertura parcial em vez de serem inventados.</li><li>Cash 6-max, 100 BB: abertura por posição; 2,5 BB fora dos blinds.</li><li>Cash 8-max: resumo de abertura e tamanho de 3 BB da imagem publicada. Aplicação limitada a 100 BB por decisão do app; o texto não informa stack nem rake. É uma referência adaptada.</li><li>Torneio 9-max: resumos de abertura a 75 e 100 BB. A 75 BB, o resumo não informa o tamanho do raise.</li><li>Torneio 8-max, 10 BB: resumo de stack curto. Ações agrupadas permanecem “MISTA”, sem frequência inventada.</li><li>Cash 100 BB, sem ante: diretriz de 3-bet com QQ+/AK contra um único open de 2 a 5 BB, sem callers. Considera posição do agressor e posição relativa no pós-flop. Não é um range completo de defesa.</li><li>Pós-flop: pot odds; decisão de call/fold por EV apenas em cash, contra um adversário, com equity informada e encerramento de todas as apostas, sem side pots nem rake adicional.</li></ul>
     <p>As listas escritas da fonte são resumos e não reproduzem todas as frequências das imagens. “FOLD” numa consulta de abertura significa fora desse resumo; não é uma afirmação de fold GTO universal. No SB, o conjunto publicado mistura limp e raise sem discriminar a ação de cada mão.</p>
     <p>A V3.1 cruza automaticamente o estudo mais próximo quando mesa/stack não coincidem exatamente e identifica o board no pós-flop. A decisão pós-flop usa força feita, draws, textura e pot odds como heurística educacional; não é uma solução de solver.</p>
     <h3>Fontes implementadas</h3><ul>
@@ -162,5 +163,5 @@
   <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
   <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.16.1"></script>
+<script src="/app.js?v=3.17.0"></script>
 </body></html>
