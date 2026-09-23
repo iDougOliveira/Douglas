@@ -2,12 +2,12 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.12.0">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.13.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.12.0 · JOGADORES</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.13.0 · JOGADORES AUTO</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
@@ -72,7 +72,9 @@
             <span class="vision-dot" aria-hidden="true"></span>
             <span id="visionStatus">Procurando PokerVision no Windows…</span>
             <button type="button" id="visionToggle" class="mini-btn">Automático ON</button>
+            <button type="button" id="playerAutoToggle" class="mini-btn">Jogadores AUTO ON</button>
           </div>
+          <div id="playerAutoStatus" class="vision-numbers">Ações dos jogadores: aguardando leitura confiável.</div>
           <div id="visionNumbers" class="vision-numbers">Aguardando MEU STACK e POTE…</div>
           <div id="visionPlayers" class="vision-numbers">Jogadores: calibração opcional no PokerVision</div>
           <div id="visionPlayerDetails" class="vision-player-details">Leitura individual: aguardando jogadores…</div>
@@ -112,6 +114,8 @@
             <input type="hidden" name="bet_pressure" value="none">
             <input type="hidden" name="call_bb" value="0">
             <input type="hidden" name="active_opponents" value="1">
+            <input type="hidden" name="effective_stack_bb" value="">
+            <input type="hidden" name="auto_player_action" value="0">
             <input type="hidden" name="ante_bb" value="0">
             <div id="betPressure" class="pressure-panel" hidden>
               <span id="postflopPressureSummary">Aguardando leitura do pote e do stack</span>
@@ -166,5 +170,5 @@
   <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
   <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.12.0"></script>
+<script src="/app.js?v=3.13.0"></script>
 </body></html>
