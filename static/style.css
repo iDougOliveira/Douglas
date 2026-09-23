@@ -251,3 +251,13 @@ select[name="opener_position"] option{background:#0d1e18}
 .vision-player-details,.vision-health-legend,#playerAutoStatus{display:none!important}
 .seat-stack{display:block;font-size:10px;color:#d5eee4;font-weight:700;margin-top:1px;white-space:nowrap}
 .seat-stack.stale{color:#f2c94c}
+
+.seat.inactive{
+  background:#080b0a!important;
+  border-color:#28322e!important;
+  opacity:.72;
+  cursor:not-allowed;
+  box-shadow:none!important;
+}
+.seat.inactive b,.seat.inactive .avatar{color:#67736e!important}
+.seat.inactive i{display:none}
