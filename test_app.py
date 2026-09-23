@@ -183,6 +183,31 @@ class VisionNumericRelayTests(unittest.TestCase):
                 "detected_player_count": 11,
             })
 
+    def test_tournament_hud_fields(self):
+        state = app.normalize_vision_payload({
+            "hand": [],
+            "board": [],
+            "street": "PRÉ-FLOP",
+            "tournament_hud_enabled": True,
+            "tournament_hud_state": "confirmed",
+            "tournament_hud_at": 456.0,
+            "tournament_rank": 38,
+            "tournament_remaining": 198,
+            "tournament_avg_stack_bb": 32.5,
+            "tournament_small_blind": 400,
+            "tournament_big_blind": 800,
+            "tournament_ante": 100,
+            "tournament_level_seconds": 271,
+        })
+        self.assertTrue(state["tournament_hud_enabled"])
+        self.assertEqual(state["tournament_hud_state"], "confirmed")
+        self.assertEqual(state["tournament_rank"], 38)
+        self.assertEqual(state["tournament_remaining"], 198)
+        self.assertEqual(state["tournament_avg_stack_bb"], 32.5)
+        self.assertEqual(state["tournament_big_blind"], 800.0)
+        self.assertEqual(state["tournament_ante"], 100.0)
+        self.assertEqual(state["tournament_level_seconds"], 271.0)
+
     def test_vision_numeric_fields_reject_negative(self):
         with self.assertRaises(ValueError):
             app.normalize_vision_payload({
