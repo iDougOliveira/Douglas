@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.9.0"
+ENGINE_VERSION = "3.10.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -120,8 +120,21 @@ def context(data):
         raise ValueError("Formato inválido.")
     card1, card2 = str(data.get("card1", "")).strip().upper(), str(data.get("card2", "")).strip().upper()
     hand = normalize_hand(card1, card2)
+    hero_stack = number(data, "stack_bb", 100, 0.1)
+    raw_effective = data.get("effective_stack_bb")
+    if raw_effective in (None, "", 0, "0"):
+        effective_stack = hero_stack
+        effective_from_vision = False
+    else:
+        effective_stack = min(
+            hero_stack,
+            number(data, "effective_stack_bb", hero_stack, 0.1),
+        )
+        effective_from_vision = bool(data.get("auto_player_action"))
     return {"players": n, "position": pos, "mode": mode,
-            "stack": number(data, "stack_bb", 100, 0.1),
+            "stack": hero_stack,
+            "effective_stack": effective_stack,
+            "effective_from_vision": effective_from_vision,
             "hand": hand, "hole": [card1, card2],
             "ante": number(data, "ante_bb", 0)}
 
@@ -130,6 +143,7 @@ def preflop_order(n):
 
 def result_base(c):
     return {"engine_version": ENGINE_VERSION, "hand": c["hand"], "position": c["position"], "player_count": c["players"],
+            "hero_stack_bb": c["stack"], "effective_stack_bb": c["effective_stack"],
             "action": "SEM COBERTURA", "sizing": "Cenário sem cobertura estratégica", "range": "Não disponível",
             "range_hands": [], "notes": [], "sources": [], "strategy_status": "not_covered", "profile": "Sem perfil compatível",
             "raise_to_bb": None, "additional_bb": None, "disclaimer": "Referência educacional para revisão. Não é um solver GTO nem uma garantia de lucro."}
@@ -330,6 +344,12 @@ def quick_preflop_response(data, c, r):
     """Reduced-input but decisive preflop baseline for replay/study mode."""
     situation = str(data.get("situation", "unopened"))
     pressure = str(data.get("preflop_pressure", "none")).lower()
+    decision_stack = min(c["stack"], c.get("effective_stack", c["stack"]))
+    if c.get("effective_from_vision"):
+        r["notes"].append(
+            f"Stack efetivo automático contra o agressor detectado: "
+            f"{decision_stack:g} BB (hero {c['stack']:g} BB)."
+        )
     r["quick_preflop"] = True
     r["bet_pressure"] = pressure
     source(r, "charts", "threebet", "defense", "rules")
@@ -378,7 +398,16 @@ def quick_preflop_response(data, c, r):
     if situation == "facing_raise":
         if pressure not in {"low", "medium", "high", "allin"}:
             pressure = "medium"
-        opening = preflop_pressure_representative(c["stack"], pressure)
+        auto_open = data.get("open_to_bb") if data.get("auto_player_action") else None
+        try:
+            auto_open_value = float(auto_open) if auto_open not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            auto_open_value = 0.0
+        opening = (
+            min(decision_stack, auto_open_value)
+            if auto_open_value > 0
+            else preflop_pressure_representative(decision_stack, pressure)
+        )
         r["open_to_bb"] = opening
 
         value, bluff, bb_calls = _quick_vs_open_ranges(c)
@@ -395,20 +424,20 @@ def quick_preflop_response(data, c, r):
 
         if pressure == "allin":
             if c["hand"] in expand_range("QQ+ AKs AKo"):
-                r.update(action="CALL", sizing=f"Pagar all-in até {c['stack']:g} BB")
+                r.update(action="CALL", sizing=f"Pagar all-in até {decision_stack:g} BB", call_bb=decision_stack)
             else:
                 r.update(action="FOLD", sizing="Desistir contra o all-in")
             return r
 
         if c["hand"] in value or c["hand"] in bluff:
             multiple = 4.0 if c["position"] in {"SB", "BB", "BTN/SB"} else 3.5
-            size = min(c["stack"], round(max(opening * multiple, 2 * opening - 1), 2))
+            size = min(decision_stack, round(max(opening * multiple, 2 * opening - 1), 2))
             r.update(
-                action="RAISE" if size < c["stack"] else "ALL-IN",
+                action="RAISE" if size < decision_stack else "ALL-IN",
                 sizing=(
                     f"Aumentar para ~{size:g} BB"
-                    if size < c["stack"]
-                    else f"ALL-IN {c['stack']:g} BB"
+                    if size < decision_stack
+                    else f"ALL-IN {decision_stack:g} BB"
                 ),
                 raise_to_bb=size,
             )
@@ -417,7 +446,7 @@ def quick_preflop_response(data, c, r):
         if c["hand"] in bb_calls:
             invested = 1.0
             call = max(0.0, round(opening - invested, 2))
-            if call < c["stack"]:
+            if call < decision_stack:
                 r.update(action="CALL", sizing=f"Pagar ~{call:g} BB", call_bb=call)
             else:
                 r.update(action="FOLD", sizing="Desistir; o valor exigiria comprometer todo o stack")
@@ -449,20 +478,20 @@ def quick_preflop_response(data, c, r):
 
         if pressure == "allin":
             if c["hand"] in premium:
-                r.update(action="CALL", sizing=f"Pagar all-in até {c['stack']:g} BB")
+                r.update(action="CALL", sizing=f"Pagar all-in até {decision_stack:g} BB", call_bb=decision_stack)
             else:
                 r.update(action="FOLD", sizing="Desistir contra o all-in")
             return r
 
         if c["hand"] in premium:
-            representative = preflop_pressure_representative(c["stack"], pressure)
-            size = min(c["stack"], max(10.0, round(representative * 2.5, 2)))
+            representative = preflop_pressure_representative(decision_stack, pressure)
+            size = min(decision_stack, max(10.0, round(representative * 2.5, 2)))
             r.update(
-                action="RAISE" if size < c["stack"] else "ALL-IN",
+                action="RAISE" if size < decision_stack else "ALL-IN",
                 sizing=(
                     f"4-bet para ~{size:g} BB"
-                    if size < c["stack"]
-                    else f"ALL-IN {c['stack']:g} BB"
+                    if size < decision_stack
+                    else f"ALL-IN {decision_stack:g} BB"
                 ),
                 raise_to_bb=size,
             )
@@ -703,21 +732,37 @@ def postflop(data,c,r):
     if pot <= 0:
         raise ValueError("Informe o pote atual para analisar o pós-flop.")
 
-    # Exact SPR requires the effective stack. We only read hero's stack, so this
-    # is deliberately exposed as a hero stack/pot ratio, not as exact SPR.
+    decision_stack = min(c["stack"], c.get("effective_stack", c["stack"]))
     r["hero_stack_pot_ratio"] = round(c["stack"] / pot, 3)
-    r["notes"].append(
-        f"Relação stack/pote do hero: {c['stack']:g}/{pot:g} = "
-        f"{r['hero_stack_pot_ratio']:.2f}. O SPR formal usa stack efetivo; "
-        "sem ler o stack adversário, este valor é apenas contexto de comprometimento."
-    )
+    if c.get("effective_from_vision"):
+        r["spr"] = round(decision_stack / pot, 3)
+        r["notes"].append(
+            f"Stack efetivo automático: {decision_stack:g} BB; "
+            f"SPR aproximado {decision_stack:g}/{pot:g} = {r['spr']:.2f}."
+        )
+    else:
+        r["notes"].append(
+            f"Relação stack/pote do hero: {c['stack']:g}/{pot:g} = "
+            f"{r['hero_stack_pot_ratio']:.2f}. Sem um adversário identificado "
+            "com stack confiável, o motor mantém o contexto baseado no stack do hero."
+        )
+
+    if call > c["stack"]:
+        if data.get("auto_player_action"):
+            r["notes"].append(
+                f"Leitura automática pediu {call:g} BB, acima do stack do hero; "
+                f"o valor foi limitado a {c['stack']:g} BB."
+            )
+            call = c["stack"]
+        else:
+            raise ValueError("O valor para pagar não pode exceder seu stack.")
 
     if call <= 0 and pressure in {"low", "medium", "high", "allin"}:
-        ranges = postflop_pressure_ranges(pot, c["stack"])
+        ranges = postflop_pressure_ranges(pot, decision_stack)
         selected = ranges.get(pressure)
         if not selected:
             raise ValueError("Essa faixa de aposta excede seu stack; use ALL-IN.")
-        call = postflop_pressure_representative(pot, c["stack"], pressure)
+        call = postflop_pressure_representative(pot, decision_stack, pressure)
         r["call_bb"] = call
         r["bet_pressure"] = pressure
         low, high = selected
@@ -734,10 +779,23 @@ def postflop(data,c,r):
                 f"essa faixa é {pct_low}–{pct_high}% do pote; com pote de {pot:g} BB, "
                 f"equivale a {low:g}–{high:g} BB. O motor usa {call:g} BB como ponto médio."
             )
+        if data.get("auto_player_action"):
+            r["notes"].append(
+                "Quando o PokerVision fornece o valor exato para pagar, esse valor "
+                "tem prioridade sobre a aproximação por faixa."
+            )
+        else:
+            r["notes"].append(
+                "O ponto médio é uma aproximação operacional para revisão rápida; "
+                "não substitui o tamanho exato da aposta."
+            )
+    if call > 0 and data.get("auto_player_action"):
+        r["call_bb"] = round(call, 4)
+        r["bet_pressure"] = pressure
         r["notes"].append(
-            "O ponto médio é uma aproximação operacional para revisão rápida; "
-            "não substitui o tamanho exato da aposta."
+            f"Ação automática dos jogadores: valor atual para pagar = {call:g} BB."
         )
+
     opponents = int(number(data,"active_opponents",1,1,9))
     if opponents > 1:
         r["notes"].append("Pote multiway: o modo de estudo usa uma linha mais conservadora.")
