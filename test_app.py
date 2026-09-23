@@ -153,6 +153,7 @@ class VisionNumericRelayTests(unittest.TestCase):
             "inactive_points": [[0.1, 0.2], [0.8, 0.2]],
             "seat_observations": [
                 {
+                    "seat_index": 1,
                     "x": 0.12, "y": 0.22, "name": "Player1",
                     "stack_bb": 88.5, "status": "active", "raw": "88,5 BB",
                 }
@@ -165,6 +166,7 @@ class VisionNumericRelayTests(unittest.TestCase):
         self.assertEqual(state["table_scan_at"], 123.5)
         self.assertEqual(state["inactive_points"], [[0.1, 0.2], [0.8, 0.2]])
         self.assertEqual(state["seat_observations"][0]["name"], "Player1")
+        self.assertEqual(state["seat_observations"][0]["seat_index"], 1)
         self.assertEqual(state["seat_observations"][0]["stack_bb"], 88.5)
         self.assertIsNone(state["seat_observations"][0]["bet_bb"])
         self.assertEqual(state["seat_observations"][0]["action"], "UNKNOWN")
