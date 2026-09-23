@@ -1115,6 +1115,7 @@ class PokerVisionApp:
             memory["round_bet_bb"] = None
             memory["action"] = "UNKNOWN"
             memory["action_at"] = 0.0
+            memory["action_history"] = []
 
     def _merge_player_observations(
         self,
@@ -1171,6 +1172,31 @@ class PokerVisionApp:
             if inferred_action:
                 memory["action"] = inferred_action
                 memory["action_at"] = now
+                history = memory.setdefault("action_history", [])
+                event = {
+                    "action": inferred_action,
+                    "bet_bb": memory.get("round_bet_bb"),
+                    "at": now,
+                }
+                last_event = history[-1] if history else None
+                same_event = bool(
+                    last_event
+                    and last_event.get("action") == event["action"]
+                    and (
+                        last_event.get("bet_bb") == event["bet_bb"]
+                        or (
+                            last_event.get("bet_bb") is not None
+                            and event["bet_bb"] is not None
+                            and abs(
+                                float(last_event["bet_bb"])
+                                - float(event["bet_bb"])
+                            ) <= 0.05
+                        )
+                    )
+                )
+                if not same_event:
+                    history.append(event)
+                    del history[:-12]
                 if inferred_action == "FOLD":
                     memory["folded"] = True
 
@@ -1194,6 +1220,7 @@ class PokerVisionApp:
                 "bet_bb": memory.get("round_bet_bb"),
                 "action": action,
                 "action_at": memory.get("action_at", 0.0),
+                "action_history": list(memory.get("action_history", [])),
                 "status": status,
                 "stale": False,
                 "last_seen_age": 0.0,
@@ -1223,6 +1250,7 @@ class PokerVisionApp:
                 "bet_bb": memory.get("round_bet_bb"),
                 "action": str(memory.get("action", "UNKNOWN")).upper(),
                 "action_at": memory.get("action_at", 0.0),
+                "action_history": list(memory.get("action_history", [])),
                 "status": "folded" if memory.get("folded") else memory.get("status", "active"),
                 "stale": True,
                 "last_seen_age": round(age, 2),
