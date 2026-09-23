@@ -314,40 +314,7 @@ function mapPointsToLayout(points,count){
   return used;
 }
 
-function renderVisionPlayerDetails(){
-  const box=$('#visionPlayerDetails');
-  if(!box) return;
-  const observations=(Array.isArray(visionSeatObservations)?visionSeatObservations:[])
-    .slice()
-    .sort((a,b)=>(Number(a.y)||0)-(Number(b.y)||0));
-
-  if(!observations.length){
-    box.textContent='Leitura individual: nenhum jogador confirmado ainda.';
-    return;
-  }
-
-  const labelAction=action=>{
-    const value=String(action||'UNKNOWN').toUpperCase();
-    return value==='UNKNOWN'?'ação ?':actionLabel(value);
-  };
-
-  box.innerHTML=observations.map(obs=>{
-    const state=obs.data_state||'partial';
-    const stale=Boolean(obs.stale)||state==='stale';
-    const name=escapeHTML(obs.name||'Nome ?');
-    const stack=obs.stack_bb!=null?escapeHTML(formatBB(obs.stack_bb)+' BB'):'stack ?';
-    const bet=obs.bet_bb!=null?escapeHTML('aposta '+formatBB(obs.bet_bb)+' BB'):'aposta ?';
-    const action=escapeHTML(labelAction(obs.action));
-    const status=stale
-      ? 'DESATUALIZADO'
-      : state==='complete'
-      ? 'COMPLETO'
-      : obs.status==='disconnected'
-      ? 'DESCONECTADO'
-      : 'PARCIAL';
-    return `<span class="player-read ${escapeHTML(stale?'stale':state)}"><b>${name}</b> · ${stack} · ${bet} · ${action} · ${status}</span>`;
-  }).join('');
-}
+function renderVisionPlayerDetails(){ return; }
 
 function renderVisionHealthOverlay(){
   const layer=$('#visionSeatHealth');
@@ -356,62 +323,27 @@ function renderVisionHealthOverlay(){
 
   const count=Number(playerCount||8);
   if(!SEAT_LAYOUTS[count]) return;
-
-  const state=visionLastState||{};
-  const tableError=visionTableState==='error';
-  const tableConfirmed=visionTableState==='confirmed';
   const mapped=mapObservationsToCurrentSeats(visionSeatObservations,count);
-  const heroComplete=tableConfirmed
-    && Boolean(state.confirmed)
-    && Array.isArray(state.hand)
-    && state.hand.length===2
-    && Number(state.hero_stack_bb||0)>0;
+  const tableError=visionTableState==='error';
 
   seatLayout(count).forEach(([x,y],i)=>{
     const dot=document.createElement('span');
     const obs=mapped.get(i);
+    const hasStack=obs && Number.isFinite(Number(obs.stack_bb));
+    const stale=Boolean(obs?.stale)||obs?.data_state==='stale';
     let health='partial';
-    let label='Informações parciais ou aguardando atualização';
-
-    if(tableError){
-      health='error';
-      label='Erro na leitura automática; modo básico continua ativo';
-    }else if(obs?.stale || obs?.data_state==='stale'){
-      health='partial';
-      const age=Number(obs.last_seen_age||0);
-      label=`${obs.name||'Jogador'} · última leitura há ${age.toFixed(1)}s`;
-    }else if(obs?.status==='disconnected'){
-      health='partial';
-      label='Jogador desconectado; último dado conhecido mantido';
-    }else if(obs?.data_state==='complete'){
-      health='ok';
-      const name=obs.name?String(obs.name):`Assento ${i+1}`;
-      const stack=Number(obs.stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2});
-      const bet=obs.bet_bb!=null
-        ? Number(obs.bet_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})
-        : '?';
-      label=`${name} · stack ${stack} BB · aposta ${bet} BB · ${actionLabel(obs.action)}`;
-    }else if(i===0 && heroComplete){
-      health='ok';
-      label=`Você · stack ${Number(state.hero_stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
-    }else if(tableConfirmed){
-      health='partial';
-      if(obs?.name || obs?.stack_bb!=null){
-        label=`${obs?.name||'Jogador'} · leitura parcial`;
-      }else{
-        label='Assento ativo; nome/stack/aposta/ação ainda incompletos';
-      }
-    }
+    if(tableError) health='error';
+    else if(hasStack && !stale) health='ok';
 
     dot.className=`vision-seat-dot ${health}`;
     dot.style.left=x+'%';
     dot.style.top=y+'%';
-    dot.title=label;
+    dot.title=hasStack
+      ? `Stack ${formatBB(obs.stack_bb)} BB${stale?' · desatualizado':''}`
+      : 'Stack ainda não lido';
     layer.appendChild(dot);
   });
 
-  // Empty/inactive physical seats are drawn separately using the capacity
-  // layout; they must not shift the active-player position model.
   const physicalCount=Number(tableMaxSeats||count);
   if(SEAT_LAYOUTS[physicalCount]){
     const inactive=mapPointsToLayout(visionInactivePoints,physicalCount);
@@ -421,12 +353,10 @@ function renderVisionHealthOverlay(){
       dot.className='vision-seat-dot absent';
       dot.style.left=x+'%';
       dot.style.top=y+'%';
-      dot.title='Ausente ou lugar vazio';
+      dot.title='Lugar vazio';
       layer.appendChild(dot);
     });
   }
-
-  renderVisionPlayerDetails();
 }
 
 function renderTable(){
@@ -444,7 +374,12 @@ function renderTable(){
     applyPositionColor(b,pos);
     b.style.left=x+'%';
     b.style.top=y+'%';
-    b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':'♟'}</span><b>${pos}</b>${i===dealerSeat?'<i>D</i>':''}`;
+    const mappedStacks=mapObservationsToCurrentSeats(visionSeatObservations,playerCount);
+    const stackObs=mappedStacks.get(i);
+    const stackText=stackObs && Number.isFinite(Number(stackObs.stack_bb))
+      ? `<span class="seat-stack${stackObs.stale?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`
+      : '';
+    b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':'♟'}</span><b>${pos}</b>${stackText}${i===dealerSeat?'<i>D</i>':''}`;
     b.setAttribute('aria-label',`${i===0?'Você':`Assento ${i+1}`}, ${pos}. Colocar botão aqui`);
     b.setAttribute('aria-pressed',String(i===dealerSeat));
     b.onclick=()=>{
@@ -468,30 +403,22 @@ function renderTable(){
     ?'Heads-up: o botão também é o small blind.'
     :'Clique em qualquer assento para posicionar o botão. O motor identifica sua posição automaticamente.';
 
-  $$('.player-count').forEach(b=>{
-    const selected=Number(b.dataset.count)===playerCount;
-    b.classList.toggle('active',selected);
-    b.setAttribute('aria-pressed',String(selected));
-  });
+  const playerSelect=$('#playerCountSelect');
+  if(playerSelect) playerSelect.value=String(playerCount);
   renderPositionLegend();
   renderVisionHealthOverlay();
   syncContext();
 }
 
 function selectGameType(value){
-  const cfg=GAME_TYPES[value];
-  if(!cfg) return;
-  gameType=value;
+  const cfg=GAME_TYPES[value]||GAME_TYPES.cash;
+  gameType=GAME_TYPES[value]?value:'cash';
   const f=$('#reviewForm').elements;
-  f.game_type.value=value;
+  f.game_type.value=gameType;
   f.mode.value=cfg.mode;
-  $$('.game-type').forEach(button=>{
-    button.classList.toggle('active',button.dataset.value===value);
-    button.setAttribute('aria-pressed',String(button.dataset.value===value));
-  });
-  const hint=$('#gameTypeHint');
-  if(hint) hint.textContent=cfg.hint;
-  try{localStorage.setItem('pokercoach.gameType',value)}catch(e){}
+  const select=$('#gameTypeSelect');
+  if(select && select.value!==gameType) select.value=gameType;
+  try{localStorage.setItem('pokercoach.gameType',gameType)}catch(e){}
   invalidateReview();
   scheduleAnalysis();
 }
@@ -499,30 +426,25 @@ function selectGameType(value){
 function initGameType(){
   let saved='cash';
   try{saved=localStorage.getItem('pokercoach.gameType')||'cash'}catch(e){}
-  if(!GAME_TYPES[saved]) saved='cash';
+  if(!GAME_TYPES[saved] || saved==='spin') saved='cash';
+  const select=$('#gameTypeSelect');
+  if(select) select.onchange=()=>selectGameType(select.value);
   selectGameType(saved);
-  $$('.game-type').forEach(button=>{
-    if(button.disabled) return;
-    button.onclick=()=>selectGameType(button.dataset.value);
-  });
 }
 
 function renderTableCapacityControls(){
-  const controls=$('#tableCapacity');
-  if(!controls) return;
-  controls.innerHTML='';
-  for(let count=2;count<=10;count++){
-    const b=document.createElement('button');
-    b.type='button';
-    b.className='table-capacity';
-    b.dataset.count=String(count);
-    b.textContent=String(count);
-    const selected=count===tableMaxSeats;
-    b.classList.toggle('active',selected);
-    b.setAttribute('aria-pressed',String(selected));
-    b.onclick=()=>chooseTableCapacity(count);
-    controls.appendChild(b);
+  const select=$('#tableCapacitySelect');
+  if(!select) return;
+  if(!select.options.length){
+    for(let count=2;count<=10;count++){
+      const option=document.createElement('option');
+      option.value=String(count);
+      option.textContent=String(count);
+      select.appendChild(option);
+    }
+    select.onchange=()=>chooseTableCapacity(Number(select.value));
   }
+  select.value=String(tableMaxSeats);
 }
 
 async function chooseTableCapacity(count){
@@ -564,22 +486,22 @@ function choosePlayerCount(count){
 async function initTable(){
   try{
     positionOrder=await api('/positions.json');
-    const controls=$('#playerCounts');
-    controls.innerHTML='';
-    Object.keys(positionOrder).forEach(count=>{
-      const b=document.createElement('button');
-      b.type='button';
-      b.className='player-count';
-      b.dataset.count=count;
-      b.textContent=count;
-      b.setAttribute('aria-label',`${count} jogadores`);
-      b.onclick=()=>choosePlayerCount(Number(count));
-      controls.appendChild(b);
-    });
+    const select=$('#playerCountSelect');
+    if(select){
+      select.innerHTML='';
+      Object.keys(positionOrder).forEach(count=>{
+        const option=document.createElement('option');
+        option.value=count;
+        option.textContent=count;
+        select.appendChild(option);
+      });
+      select.onchange=()=>choosePlayerCount(Number(select.value));
+    }
     try{
       const saved=Number(localStorage.getItem('pokercoach.playerCount'));
       if(positionOrder[saved]) playerCount=saved;
     }catch(e){}
+    if(select) select.value=String(playerCount);
     renderTable();
     $('.analyze-btn').disabled=false;
     scheduleAnalysis();
@@ -1108,128 +1030,28 @@ function setAutomaticPostflopUI(pressure){
 
 function applyVisionPlayerAutomation(state){
   const f=$('#reviewForm')?.elements;
-  const status=$('#playerAutoStatus');
   if(!f) return;
 
+  // V3.14: names/actions/folds from table OCR are diagnostic only. They are
+  // not reliable enough to steer a decision. Manual action controls remain
+  // the source of truth; table OCR contributes only stack context.
   f.auto_player_action.value='0';
-  if(!visionEnabled || !visionPlayerAutoEnabled){
-    f.effective_stack_bb.value='';
-    return;
+  f.effective_stack_bb.value='';
+
+  const players=mappedVisionPlayers().filter(player=>
+    player.seat!==0
+    && player.status!=='inactive'
+    && Number.isFinite(Number(player.stack_bb))
+    && (!player.stale || Number(player.last_seen_age||0)<=4)
+  );
+  const stacks=players.map(player=>Number(player.stack_bb)).filter(value=>value>0);
+  state.opponent_stacks_bb=stacks;
+
+  const meter=$('#visionPlayers');
+  if(meter){
+    meter.textContent=`Mesa: ${playerCount} jogadores · stacks ${stacks.length}/${Math.max(0,playerCount-1)} lidos`;
+    meter.classList.toggle('ready',stacks.length>=Math.max(1,playerCount-2));
   }
-  if(visionTableState!=='confirmed'){
-    if(status) status.textContent='Ações dos jogadores: leitura parcial · modo manual preservado.';
-    return;
-  }
-
-  const key=currentVisionStreetKey();
-  if(visionManualOverrideKey && visionManualOverrideKey===key){
-    if(status) status.textContent='Ações dos jogadores: override manual nesta rua.';
-    return;
-  }
-
-  const players=mappedVisionPlayers();
-  const hero=players.find(player=>player.seat===0);
-  const opponents=players.filter(player=>player.seat!==0);
-  const events=normalizedPlayerEvents(opponents);
-  const heroStack=Math.max(0,Number(f.stack_bb.value)||0);
-  const folded=opponents.filter(player=>player.status==='folded').length;
-  f.active_opponents.value=String(Math.max(1,playerCount-1-folded));
-
-  const street=f.street.value||'preflop';
-  let applied=false;
-  let summary='';
-
-  if(street==='preflop'){
-    const raises=events.filter(event=>['RAISE','ALL-IN'].includes(event.action));
-    const calls=events.filter(event=>event.action==='CALL');
-
-    if(raises.length){
-      const lastRaise=raises[raises.length-1];
-      const firstRaise=raises[0];
-      const raiseCount=raises.length;
-      const situation=raiseCount>=3?'facing_4bet':raiseCount>=2?'facing_3bet':'facing_raise';
-      const amount=lastRaise.bet_bb!=null
-        ? Number(lastRaise.bet_bb)
-        : Number(lastRaise.player?.bet_bb);
-      const pressure=classifyPreflopPressure(amount,lastRaise.action);
-
-      // A normal raise without a readable amount stays manual. ALL-IN is
-      // unambiguous even when PokerStars replaces the stack number by text.
-      if(pressure!=='none'){
-        setAutomaticPreflopUI(situation,pressure);
-        if(Number.isFinite(amount)&&amount>0) f.open_to_bb.value=String(amount);
-        f.callers.value=String(calls.length);
-        f.opener_position.value=firstRaise.player?.position||'';
-        const effective=playerEffectiveStack(lastRaise.player,heroStack);
-        f.effective_stack_bb.value=effective!=null?String(effective):'';
-        f.auto_player_action.value='1';
-        applied=true;
-        summary=`AUTO: ${lastRaise.player?.name||lastRaise.player?.position||'adversário'} · ${actionLabel(lastRaise.action)}${Number.isFinite(amount)&&amount>0?' '+formatBB(amount)+' BB':''}`;
-      }
-    }else if(calls.length){
-      const lastCall=calls[calls.length-1];
-      setAutomaticPreflopUI('limped','none');
-      f.callers.value=String(calls.length);
-      const effective=playerEffectiveStack(lastCall.player,heroStack);
-      f.effective_stack_bb.value=effective!=null?String(effective):'';
-      f.auto_player_action.value='1';
-      applied=true;
-      summary=`AUTO: ${calls.length} limp/call detectado(s)`;
-    }
-  }else{
-    const aggressive=events.filter(event=>['BET','RAISE','ALL-IN'].includes(event.action));
-    if(aggressive.length){
-      const last=aggressive[aggressive.length-1];
-      const amount=last.bet_bb!=null?Number(last.bet_bb):Number(last.player?.bet_bb);
-      let call=null;
-      const heroBet=hero?.bet_bb==null?0:Number(hero.bet_bb);
-      const effective=playerEffectiveStack(last.player,heroStack);
-
-      if(Number.isFinite(amount)&&amount>0){
-        call=Math.max(0,amount-(Number.isFinite(heroBet)?heroBet:0));
-      }else if(last.action==='ALL-IN' && effective!=null){
-        call=Math.min(heroStack,effective);
-      }
-
-      const pressure=classifyPostflopPressure(amount,Number(f.pot_bb.value||0),last.action);
-      if(pressure!=='none' && call!=null && call>=0){
-        setAutomaticPostflopUI(pressure);
-        f.call_bb.value=String(Math.min(heroStack,call));
-        f.effective_stack_bb.value=effective!=null?String(effective):'';
-        f.auto_player_action.value='1';
-        applied=true;
-        summary=`AUTO: ${last.player?.name||last.player?.position||'adversário'} · ${actionLabel(last.action)} · pagar ${formatBB(Math.min(heroStack,call))} BB`;
-      }
-    }
-  }
-
-  if(!applied){
-    f.effective_stack_bb.value='';
-    if(status){
-      status.textContent='Ações dos jogadores: sem ação confiável para aplicar · controles manuais continuam ativos.';
-    }
-    return;
-  }
-
-  const signature=JSON.stringify([
-    street,
-    f.situation?.value,
-    f.preflop_pressure?.value,
-    f.post_action?.value,
-    f.bet_pressure?.value,
-    f.call_bb?.value,
-    f.effective_stack_bb?.value,
-    f.active_opponents?.value,
-    summary
-  ]);
-  if(signature!==visionAutoLastSignature){
-    visionAutoLastSignature=signature;
-    invalidateReview('PokerVision: ação dos jogadores atualizada');
-    updatePressureLabels();
-    syncContext();
-    scheduleAnalysis();
-  }
-  if(status) status.textContent=summary+' · fallback manual disponível.';
 }
 
 function applyVisionTableState(state){
@@ -1239,7 +1061,7 @@ function applyVisionTableState(state){
   visionTableState=String(state?.table_scan_state||'disabled');
   visionInactivePoints=Array.isArray(state?.inactive_points)?state.inactive_points:[];
   visionSeatObservations=Array.isArray(state?.seat_observations)?state.seat_observations:[];
-  renderVisionPlayerDetails();
+  renderTable();
   const count=Number(state?.detected_player_count||0);
   const inactive=Number(state?.inactive_seats??0);
   const maxSeats=Number(state?.table_max_seats||0);
@@ -1413,24 +1235,13 @@ function initPokerVision(){
   try{
     const saved=localStorage.getItem('pokercoach.visionEnabled');
     if(saved!==null) visionEnabled=saved!=='0';
-    const playerSaved=localStorage.getItem('pokercoach.playerAutoEnabled');
-    if(playerSaved!==null) visionPlayerAutoEnabled=playerSaved!=='0';
   }catch(e){}
   setVisionEnabled(visionEnabled);
-  setVisionPlayerAutoEnabled(visionPlayerAutoEnabled);
   $('#visionToggle').onclick=()=>{
     setVisionEnabled(!visionEnabled);
     if(visionEnabled){
       visionLastSignature='';
       pollPokerVision();
-    }
-  };
-  if($('#playerAutoToggle')) $('#playerAutoToggle').onclick=()=>{
-    setVisionPlayerAutoEnabled(!visionPlayerAutoEnabled);
-    visionManualOverrideKey='';
-    visionAutoLastSignature='';
-    if(visionPlayerAutoEnabled && visionLastState){
-      applyVisionPlayerAutomation(visionLastState);
     }
   };
   pollPokerVision();
@@ -1465,8 +1276,11 @@ function buildPayload(){
     ? Number(f.call_bb?.value||0)
     : 0;
   data.bet_pressure=f.post_action?.value==='facing_bet'?(f.bet_pressure.value||'none'):'none';
-  data.effective_stack_bb=f.effective_stack_bb?.value||'';
-  data.auto_player_action=f.auto_player_action?.value==='1';
+  data.effective_stack_bb='';
+  data.auto_player_action=false;
+  data.opponent_stacks_bb=mappedVisionPlayers()
+    .filter(player=>player.seat!==0 && Number.isFinite(Number(player.stack_bb)))
+    .map(player=>Number(player.stack_bb));
   data.record_review=false;
   return data;
 }
