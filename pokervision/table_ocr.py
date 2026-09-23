@@ -19,6 +19,31 @@ def fold_text(value: str) -> str:
     return " ".join(text.upper().split())
 
 
+SEAT_LAYOUTS = {
+    2: [(0.50, 0.88), (0.50, 0.11)],
+    3: [(0.50, 0.88), (0.16, 0.28), (0.84, 0.28)],
+    4: [(0.50, 0.88), (0.10, 0.50), (0.50, 0.10), (0.90, 0.50)],
+    5: [(0.50, 0.88), (0.13, 0.66), (0.18, 0.20), (0.82, 0.20), (0.87, 0.66)],
+    6: [(0.50, 0.88), (0.13, 0.68), (0.12, 0.29), (0.50, 0.10), (0.88, 0.29), (0.87, 0.68)],
+    7: [(0.50, 0.88), (0.16, 0.72), (0.09, 0.43), (0.22, 0.16), (0.78, 0.16), (0.91, 0.43), (0.84, 0.72)],
+    8: [(0.50, 0.88), (0.16, 0.72), (0.08, 0.45), (0.18, 0.18), (0.50, 0.09), (0.82, 0.18), (0.92, 0.45), (0.84, 0.72)],
+    9: [(0.50, 0.88), (0.18, 0.73), (0.08, 0.49), (0.13, 0.24), (0.34, 0.10), (0.66, 0.10), (0.87, 0.24), (0.92, 0.49), (0.82, 0.73)],
+    10: [(0.50, 0.88), (0.20, 0.75), (0.08, 0.56), (0.09, 0.31), (0.26, 0.13), (0.50, 0.08), (0.74, 0.13), (0.91, 0.31), (0.92, 0.56), (0.80, 0.75)],
+}
+
+
+def nearest_seat_index(x: float, y: float, max_seats: int) -> tuple[int | None, float]:
+    layout = SEAT_LAYOUTS.get(int(max_seats), SEAT_LAYOUTS[9])
+    best_index = None
+    best_distance = float("inf")
+    for index, (sx, sy) in enumerate(layout):
+        distance = math.hypot(float(x) - sx, float(y) - sy)
+        if distance < best_distance:
+            best_index = index
+            best_distance = distance
+    return best_index, best_distance
+
+
 def is_inactive_label(text: str) -> bool:
     folded = fold_text(text)
     # PokerStars has a local control "Ausente na próxima mão"; it is not a
@@ -143,124 +168,124 @@ def _nearby_action(
 def build_seat_observations(
     lines: list[dict],
     all_lines: list[dict] | None = None,
+    max_seats: int = 9,
 ) -> list[dict]:
-    """Pair seat plaques with name, stack, current bet and visible action.
+    """Extract seat stacks conservatively and pin them to physical seats.
 
-    A PokerStars seat can replace its stack text with "All In", "Pago",
-    "Desisto", etc. Action-only plaques therefore remain observations even
-    when no stack number is visible in that OCR frame.
+    Names/actions are diagnostic only. Stack identity is based on the nearest
+    physical seat, so dim/folded text cannot make another stack slide into it.
     """
     all_lines = all_lines or lines
-    stack_lines = [
-        line for line in lines
-        if parse_stack_bb(line["text"]) is not None
-    ]
-    action_lines = [
-        line for line in lines
-        if parse_action_text(line["text"])
-    ]
-
-    anchors: list[tuple[dict, float | None, str]] = []
-    for line in stack_lines:
-        anchors.append((line, parse_stack_bb(line["text"]), ""))
-    for line in action_lines:
-        anchors.append((line, None, parse_action_text(line["text"])))
-
     observations: list[dict] = []
-    for anchor, stack, anchor_action in anchors:
-        sx = float(anchor["x"])
-        sy = float(anchor["y"])
 
-        inline_name = ""
+    for line in lines:
+        text = str(line.get("text", ""))
+        folded = fold_text(text)
+        stack = parse_stack_bb(text)
+        action = parse_action_text(text)
+        if stack is None and not action:
+            continue
+        if "POTE" in folded:
+            continue
+
+        sx = float(line["x"])
+        sy = float(line["y"])
+        seat_index, seat_distance = nearest_seat_index(sx, sy, max_seats)
+        if seat_index is None or seat_distance > 0.145:
+            continue
+
+        name = ""
         if stack is not None:
             inline_name = re.sub(
                 r"\d{1,5}(?:[.,]\d{1,2})?\s*BB\b",
                 "",
-                str(anchor["text"]),
+                text,
                 flags=re.IGNORECASE,
             ).strip(" -|")
-        name = inline_name if plausible_name(inline_name) else ""
+            if plausible_name(inline_name):
+                name = inline_name
 
         if not name:
             candidates = []
-            for line in lines:
-                if line is anchor or not plausible_name(line["text"]):
+            for candidate in lines:
+                if candidate is line or not plausible_name(candidate["text"]):
                     continue
-                dx = float(line["x"]) - sx
-                dy = float(line["y"]) - sy
+                dx = float(candidate["x"]) - sx
+                dy = float(candidate["y"]) - sy
                 if abs(dx) <= 0.15 and abs(dy) <= 0.13:
                     score = (dx * dx) + (dy * dy * 1.8)
-                    candidates.append((score, line["text"]))
+                    candidates.append((score, candidate["text"]))
             if candidates:
                 candidates.sort(key=lambda item: item[0])
                 name = str(candidates[0][1]).strip()
 
-        status = "active"
         nearby_text = []
-        for line in lines:
-            dx = float(line["x"]) - sx
-            dy = float(line["y"]) - sy
+        for candidate in lines:
+            dx = float(candidate["x"]) - sx
+            dy = float(candidate["y"]) - sy
             if abs(dx) <= 0.14 and abs(dy) <= 0.12:
-                nearby_text.append(str(line["text"]))
+                nearby_text.append(str(candidate["text"]))
         joined = " ".join(nearby_text)
+        status = "active"
         if is_inactive_label(joined):
             status = "inactive"
         elif is_disconnected_label(joined):
             status = "disconnected"
 
-        bet_bb = _nearest_inward_bet(sx, sy, all_lines, anchor)
-        action = anchor_action or _nearby_action(sx, sy, all_lines)
-        if action == "ALL-IN":
+        bet_bb = _nearest_inward_bet(sx, sy, all_lines, line)
+        detected_action = action or _nearby_action(sx, sy, all_lines)
+        if detected_action == "ALL-IN":
             status = "active"
 
         observations.append({
+            "seat_index": int(seat_index),
+            "seat_distance": round(float(seat_distance), 4),
             "x": round(sx, 4),
             "y": round(sy, 4),
             "name": name[:32],
             "stack_bb": stack,
             "bet_bb": bet_bb,
-            "action": action or "unknown",
+            "action": detected_action or "unknown",
             "status": status,
-            "raw": str(anchor["text"])[:80],
+            "raw": text[:80],
         })
 
-    # Merge multiple OCR fragments belonging to the same seat. Preserve all
-    # useful fields; action-only frames must not erase a stack reading.
-    deduped: list[dict] = []
+    # Exactly one record per physical seat. Prefer a readable stack, then the
+    # observation geometrically closest to that seat.
+    by_seat: dict[int, dict] = {}
     for obs in observations:
-        duplicate = None
-        for existing in deduped:
-            same_name = (
-                obs["name"]
-                and existing["name"]
-                and fold_text(obs["name"]) == fold_text(existing["name"])
-            )
-            nearby = (
-                abs(obs["x"] - existing["x"]) <= 0.055
-                and abs(obs["y"] - existing["y"]) <= 0.055
-            )
-            if same_name or nearby:
-                duplicate = existing
-                break
-
-        if duplicate is None:
-            deduped.append(obs)
+        seat = int(obs["seat_index"])
+        existing = by_seat.get(seat)
+        if existing is None:
+            by_seat[seat] = obs
             continue
 
-        if obs["name"] and not duplicate["name"]:
-            duplicate["name"] = obs["name"]
-        if obs["stack_bb"] is not None:
-            duplicate["stack_bb"] = obs["stack_bb"]
-        if obs["bet_bb"] is not None:
-            duplicate["bet_bb"] = obs["bet_bb"]
-        if str(obs["action"]).upper() != "UNKNOWN":
-            duplicate["action"] = obs["action"]
-        if obs["status"] != "active":
-            duplicate["status"] = obs["status"]
-        if obs["raw"]:
-            duplicate["raw"] = (duplicate["raw"] + " | " + obs["raw"])[:80]
+        existing_has_stack = existing.get("stack_bb") is not None
+        new_has_stack = obs.get("stack_bb") is not None
+        replace = (
+            (new_has_stack and not existing_has_stack)
+            or (
+                new_has_stack == existing_has_stack
+                and float(obs["seat_distance"]) < float(existing["seat_distance"])
+            )
+        )
+        if replace:
+            keep = obs
+            other = existing
+        else:
+            keep = existing
+            other = obs
 
-    return deduped[:10]
+        if not keep.get("name") and other.get("name"):
+            keep["name"] = other["name"]
+        if keep.get("bet_bb") is None and other.get("bet_bb") is not None:
+            keep["bet_bb"] = other["bet_bb"]
+        if str(keep.get("action", "unknown")).upper() == "UNKNOWN":
+            if str(other.get("action", "unknown")).upper() != "UNKNOWN":
+                keep["action"] = other["action"]
+        by_seat[seat] = keep
+
+    return [by_seat[index] for index in sorted(by_seat)][:10]
 
 def cluster_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Merge OCR fragments that belong to the same seat label."""
@@ -414,7 +439,11 @@ def analyze_table(image, max_seats: int = 9) -> dict:
 
     confidence = "alta" if evidence_words >= max(5, max_seats) else "média"
     raw = " | ".join(line["text"] for line in lines)[:320]
-    seat_observations = build_seat_observations(lines, all_lines)
+    seat_observations = build_seat_observations(
+        lines,
+        all_lines,
+        max_seats=max_seats,
+    )
     table_pot_bb = None
     for line in all_lines:
         if "POTE" not in fold_text(str(line.get("text", ""))):
