@@ -311,6 +311,39 @@ def normalize_vision_payload(data: dict) -> dict:
         "seat_observations": normalized_seat_observations(
             data.get("seat_observations", [])
         ),
+        "tournament_hud_enabled": bool(
+            data.get("tournament_hud_enabled", False)
+        ),
+        "tournament_hud_state": (
+            str(data.get("tournament_hud_state", "disabled"))
+            if str(data.get("tournament_hud_state", "disabled"))
+            in {"disabled", "not_configured", "waiting", "partial", "confirmed", "error"}
+            else "error"
+        ),
+        "tournament_hud_at": optional_nonnegative_number(
+            data.get("tournament_hud_at")
+        ),
+        "tournament_rank": optional_int_range(
+            data.get("tournament_rank"), 1, 1_000_000, "Posição do torneio"
+        ),
+        "tournament_remaining": optional_int_range(
+            data.get("tournament_remaining"), 1, 1_000_000, "Jogadores restantes"
+        ),
+        "tournament_avg_stack_bb": optional_nonnegative_number(
+            data.get("tournament_avg_stack_bb")
+        ),
+        "tournament_small_blind": optional_nonnegative_number(
+            data.get("tournament_small_blind")
+        ),
+        "tournament_big_blind": optional_nonnegative_number(
+            data.get("tournament_big_blind")
+        ),
+        "tournament_ante": optional_nonnegative_number(
+            data.get("tournament_ante")
+        ),
+        "tournament_level_seconds": optional_nonnegative_number(
+            data.get("tournament_level_seconds")
+        ),
         "updated_at": float(data.get("updated_at", 0) or 0),
     }
 
