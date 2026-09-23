@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.9.0"
+APP_VERSION = "0.10.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -597,6 +597,7 @@ class PokerVisionApp:
         self.last_logged_table_state = None
         self.player_memory: dict[str, dict] = {}
         self.player_round_key = None
+        self.player_hand_key = None
         self.player_round_max_bet = 0.0
         _bridge_publish(
             running=False,
@@ -1098,6 +1099,13 @@ class PokerVisionApp:
         )
 
     def _reset_player_round_if_needed(self) -> None:
+        state = _bridge_snapshot()
+        hand_key = tuple(state.get("hand", []))
+        if len(hand_key) == 2 and hand_key != self.player_hand_key:
+            self.player_hand_key = hand_key
+            for memory in self.player_memory.values():
+                memory["folded"] = False
+
         key = self._current_round_key()
         if key == self.player_round_key:
             return
@@ -1163,12 +1171,21 @@ class PokerVisionApp:
             if inferred_action:
                 memory["action"] = inferred_action
                 memory["action_at"] = now
+                if inferred_action == "FOLD":
+                    memory["folded"] = True
 
             memory["last_seen"] = now
             if bet is not None:
                 self.player_round_max_bet = max(self.player_round_max_bet, bet)
 
             action = str(memory.get("action", "UNKNOWN")).upper()
+            status = memory.get("status", "active")
+            if memory.get("folded"):
+                status = "folded"
+
+            # PokerStars commonly replaces the numeric stack with "All In".
+            # The last reliable stack therefore remains available as context;
+            # the action tells the site that the player has committed it.
             result = {
                 "x": memory.get("x", 0),
                 "y": memory.get("y", 0),
@@ -1176,7 +1193,8 @@ class PokerVisionApp:
                 "stack_bb": memory.get("stack_bb"),
                 "bet_bb": memory.get("round_bet_bb"),
                 "action": action,
-                "status": memory.get("status", "active"),
+                "action_at": memory.get("action_at", 0.0),
+                "status": status,
                 "stale": False,
                 "last_seen_age": 0.0,
                 "raw": str(obs.get("raw", ""))[:80],
@@ -1204,7 +1222,8 @@ class PokerVisionApp:
                 "stack_bb": memory.get("stack_bb"),
                 "bet_bb": memory.get("round_bet_bb"),
                 "action": str(memory.get("action", "UNKNOWN")).upper(),
-                "status": memory.get("status", "active"),
+                "action_at": memory.get("action_at", 0.0),
+                "status": "folded" if memory.get("folded") else memory.get("status", "active"),
                 "stale": True,
                 "last_seen_age": round(age, 2),
                 "data_state": "stale",
@@ -1528,6 +1547,7 @@ class PokerVisionApp:
         self.table_tracker.reset()
         self.player_memory.clear()
         self.player_round_key = None
+        self.player_hand_key = None
         self.player_round_max_bet = 0.0
         _bridge_publish_table({
             "detected_player_count": None,
