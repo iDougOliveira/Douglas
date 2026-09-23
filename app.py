@@ -32,8 +32,15 @@ POSITION_ORDER = strategy.POSITIONS
 
 VISION_LOCK = threading.Lock()
 VISION_STATES: dict[str, dict] = {}
+VISION_CONFIG_LOCK = threading.Lock()
+VISION_CONFIG = {"table_max_seats": 9}
 VISION_TTL_SECONDS = 3.0
 VISION_STREETS = {"AGUARDANDO", "PRÉ-FLOP", "FLOP", "TURN", "RIVER", "INCERTO", "TRANSIÇÃO"}
+
+
+def vision_config_snapshot() -> dict:
+    with VISION_CONFIG_LOCK:
+        return dict(VISION_CONFIG)
 
 
 def private_client(address: str) -> bool:
@@ -318,6 +325,10 @@ class Handler(SimpleHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/api/health":
             return self.send_json({"status": "ok", "version": VERSION})
+        if path == "/api/vision/config":
+            if not private_client(self.client_address[0]):
+                return self.send_json({"error": "Origem não permitida"}, 403)
+            return self.send_json(vision_config_snapshot())
         if path == "/api/vision/state":
             if not self.authenticated():
                 return self.send_json({"error": "Não autorizado"}, 401)
@@ -351,7 +362,11 @@ class Handler(SimpleHTTPRequestHandler):
                 state["_received_at"] = time.time()
                 with VISION_LOCK:
                     VISION_STATES[client_ip] = state
-                return self.send_json({"ok": True, "version": VERSION})
+                return self.send_json({
+                    "ok": True,
+                    "version": VERSION,
+                    "config": vision_config_snapshot(),
+                })
             if path == "/api/login":
                 if not password_ok(str(data.get("password", ""))):
                     return self.send_json({"error": "Senha inválida"}, 401)
@@ -360,6 +375,18 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.send_json({"ok": True}, cookie=cookie)
             if not self.authenticated():
                 return self.send_json({"error": "Não autorizado"}, 401)
+            if path == "/api/vision/config":
+                max_seats = optional_int_range(
+                    data.get("table_max_seats"),
+                    2,
+                    10,
+                    "Capacidade da mesa",
+                )
+                if max_seats is None:
+                    raise ValueError("Informe a capacidade da mesa.")
+                with VISION_CONFIG_LOCK:
+                    VISION_CONFIG["table_max_seats"] = max_seats
+                return self.send_json(vision_config_snapshot())
             if path == "/api/analyze":
                 return self.send_json(analyze(data))
             if path == "/api/session":
