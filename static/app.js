@@ -260,31 +260,47 @@ function seatLayout(count){
 function mapObservationsToCurrentSeats(observations,count){
   const layout=seatLayout(count);
   const mapped=new Map();
-  const used=new Set();
   const source=(Array.isArray(observations)?observations:[])
     .filter(obs=>obs && obs.status!=='inactive');
 
-  layout.forEach(([x,y],seatIndex)=>{
-    let bestIndex=-1;
+  // When the graphical table has the same number of seats as the physical
+  // PokerStars table, use the stable physical seat index. Missing/dimmed OCR
+  // on one player can no longer shift another player's stack into that seat.
+  if(count===Number(tableMaxSeats)){
+    source.forEach(obs=>{
+      const seat=Number(obs.seat_index);
+      if(Number.isInteger(seat) && seat>=0 && seat<count){
+        const previous=mapped.get(seat);
+        if(!previous || (previous.stale && !obs.stale)){
+          mapped.set(seat,obs);
+        }
+      }
+    });
+    return mapped;
+  }
+
+  // Fallback for a compressed active-player layout. Assign each observation
+  // independently to its nearest graphical seat rather than greedily moving
+  // remaining observations when one OCR reading disappears.
+  source.forEach(obs=>{
+    const ox=Number(obs.x)*100;
+    const oy=Number(obs.y)*100;
+    if(!Number.isFinite(ox)||!Number.isFinite(oy)) return;
+    let bestSeat=-1;
     let bestDistance=Infinity;
-    source.forEach((obs,index)=>{
-      if(used.has(index)) return;
-      const ox=Number(obs.x)*100;
-      const oy=Number(obs.y)*100;
-      if(!Number.isFinite(ox)||!Number.isFinite(oy)) return;
+    layout.forEach(([x,y],seat)=>{
       const dx=(x-ox)/100;
       const dy=(y-oy)/100;
       const distance=dx*dx+dy*dy;
       if(distance<bestDistance){
         bestDistance=distance;
-        bestIndex=index;
+        bestSeat=seat;
       }
     });
-    // Fairly generous because PokerStars and the synthetic table do not use
-    // exactly the same ellipse proportions.
-    if(bestIndex>=0 && bestDistance<=0.095){
-      used.add(bestIndex);
-      mapped.set(seatIndex,source[bestIndex]);
+    if(bestSeat<0 || bestDistance>0.075) return;
+    const previous=mapped.get(bestSeat);
+    if(!previous || (previous.stale && !obs.stale)){
+      mapped.set(bestSeat,obs);
     }
   });
   return mapped;
@@ -329,8 +345,11 @@ function renderVisionHealthOverlay(){
   seatLayout(count).forEach(([x,y],i)=>{
     const dot=document.createElement('span');
     const obs=mapped.get(i);
-    const hasStack=obs && Number.isFinite(Number(obs.stack_bb));
-    const stale=Boolean(obs?.stale)||obs?.data_state==='stale';
+    const heroStack=Number(visionLastState?.hero_stack_bb);
+    const hasStack=i===0
+      ? Number.isFinite(heroStack) && heroStack>0
+      : obs && Number.isFinite(Number(obs.stack_bb));
+    const stale=i===0 ? false : (Boolean(obs?.stale)||obs?.data_state==='stale');
     let health='partial';
     if(tableError) health='error';
     else if(hasStack && !stale) health='ok';
@@ -338,8 +357,9 @@ function renderVisionHealthOverlay(){
     dot.className=`vision-seat-dot ${health}`;
     dot.style.left=x+'%';
     dot.style.top=y+'%';
+    const shownStack=i===0?heroStack:Number(obs?.stack_bb);
     dot.title=hasStack
-      ? `Stack ${formatBB(obs.stack_bb)} BB${stale?' · desatualizado':''}`
+      ? `Stack ${formatBB(shownStack)} BB${stale?' · desatualizado':''}`
       : 'Stack ainda não lido';
     layer.appendChild(dot);
   });
@@ -376,9 +396,13 @@ function renderTable(){
     b.style.top=y+'%';
     const mappedStacks=mapObservationsToCurrentSeats(visionSeatObservations,playerCount);
     const stackObs=mappedStacks.get(i);
-    const stackText=stackObs && Number.isFinite(Number(stackObs.stack_bb))
-      ? `<span class="seat-stack${stackObs.stale?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`
-      : '';
+    const heroStack=Number(visionLastState?.hero_stack_bb ?? $('#reviewForm')?.elements?.stack_bb?.value);
+    let stackText='';
+    if(i===0 && Number.isFinite(heroStack) && heroStack>0){
+      stackText=`<span class="seat-stack">${formatBB(heroStack)} BB</span>`;
+    }else if(i!==0 && stackObs && Number.isFinite(Number(stackObs.stack_bb))){
+      stackText=`<span class="seat-stack${stackObs.stale?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`;
+    }
     b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':'♟'}</span><b>${pos}</b>${stackText}${i===dealerSeat?'<i>D</i>':''}`;
     b.setAttribute('aria-label',`${i===0?'Você':`Assento ${i+1}`}, ${pos}. Colocar botão aqui`);
     b.setAttribute('aria-pressed',String(i===dealerSeat));
