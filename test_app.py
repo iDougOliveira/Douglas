@@ -166,6 +166,9 @@ class VisionNumericRelayTests(unittest.TestCase):
         self.assertEqual(state["inactive_points"], [[0.1, 0.2], [0.8, 0.2]])
         self.assertEqual(state["seat_observations"][0]["name"], "Player1")
         self.assertEqual(state["seat_observations"][0]["stack_bb"], 88.5)
+        self.assertIsNone(state["seat_observations"][0]["bet_bb"])
+        self.assertEqual(state["seat_observations"][0]["action"], "UNKNOWN")
+        self.assertEqual(state["seat_observations"][0]["data_state"], "partial")
 
         with self.assertRaises(ValueError):
             app.normalize_vision_payload({
