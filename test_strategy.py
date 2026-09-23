@@ -243,6 +243,32 @@ class StrategyTest(unittest.TestCase):
         self.assertLessEqual(result.get("bet_bb", 0), 10)
         self.assertEqual(result["action"], "ALL-IN")
 
+    def test_auto_player_effective_stack_and_exact_call(self):
+        result = review(
+            mode="cash", player_count=6, position="BTN", stack_bb=100,
+            effective_stack_bb=42, auto_player_action=True,
+            card1="Ah", card2="Kh", street="flop",
+            flop1="As", flop2="7d", flop3="2c",
+            pot_bb=20, call_bb=8,
+            post_action="facing_bet", bet_pressure="medium",
+            active_opponents=1,
+        )
+        self.assertEqual(result["effective_stack_bb"], 42)
+        self.assertEqual(result["call_bb"], 8)
+        self.assertIn("Stack efetivo automático", " ".join(result["notes"]))
+
+    def test_auto_preflop_allin_uses_effective_stack(self):
+        result = review(
+            mode="cash", player_count=6, position="BB", stack_bb=100,
+            effective_stack_bb=35, auto_player_action=True,
+            card1="Ah", card2="Ad", street="preflop",
+            situation="facing_raise", preflop_pressure="allin",
+            open_to_bb=35, quick_preflop=True,
+        )
+        self.assertEqual(result["action"], "CALL")
+        self.assertEqual(result["call_bb"], 35)
+        self.assertEqual(result["effective_stack_bb"], 35)
+
     def test_turn_and_river_require_board(self):
         r = review(
             card1="As", card2="Qh", street="turn",
