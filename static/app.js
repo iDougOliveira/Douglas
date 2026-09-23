@@ -154,7 +154,7 @@ function updatePressureLabels(){
   const stack=Number(f.stack_bb.value||0);
   const pot=Number(f.pot_bb.value||0);
 
-  $$('.pre-pressure-choice').forEach(button=>{
+  $$$('.pre-pressure-choice').forEach(button=>{
     const kind=button.dataset.value;
     const small=button.querySelector('small');
     if(small) small.textContent=preflopPressureLabel(kind,stack);
@@ -162,7 +162,7 @@ function updatePressureLabels(){
   });
 
   const postRanges=postflopPressureRanges(pot,stack);
-  $$('.pressure-choice').forEach(button=>{
+  $$$('.pressure-choice').forEach(button=>{
     const kind=button.dataset.value;
     const small=button.querySelector('small');
     if(small) small.textContent=postflopPressureLabel(kind,pot,stack);
@@ -597,12 +597,12 @@ $$('.choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.pre-action').forEach(b=>b.onclick=()=>{
+$$('.pre-action').forEach(b=>b.onclick=()=>{
   markVisionManualOverride();
   const f=$('#reviewForm').elements;
   const same=f.situation.value===b.dataset.value;
-  $$('.pre-action').forEach(x=>x.classList.remove('active'));
-  $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$$('.pre-action').forEach(x=>x.classList.remove('active'));
+  $$$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
 
   if(same){
     f.situation.value='unopened';
@@ -621,10 +621,10 @@ $('.pre-action').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
+$$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
   markVisionManualOverride();
   const f=$('#reviewForm').elements;
-  $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.preflop_pressure.value=b.dataset.value;
   const representative=preflopRepresentative(b.dataset.value,f.stack_bb.value);
@@ -638,8 +638,8 @@ function resetPostAction(){
   f.post_action.value='checked_to_hero';
   f.bet_pressure.value='none';
   f.call_bb.value=0;
-  $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
-  $$('.post-state').forEach(x=>{
+  $$$('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$$('.post-state').forEach(x=>{
     x.classList.toggle('active',x.dataset.value==='checked_to_hero');
   });
   if($('#betPressure')) $('#betPressure').hidden=true;
@@ -653,16 +653,16 @@ function resetPreflopAction(){
   if($('#preflopPressure')) $('#preflopPressure').hidden=true;
 }
 
-$('.post-state').forEach(b=>b.onclick=()=>{
+$$('.post-state').forEach(b=>b.onclick=()=>{
   markVisionManualOverride();
   const f=$('#reviewForm').elements;
-  $$('.post-state').forEach(x=>x.classList.remove('active'));
+  $$$('.post-state').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.post_action.value=b.dataset.value;
   if(b.dataset.value==='checked_to_hero'){
     f.bet_pressure.value='none';
     f.call_bb.value=0;
-    $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
+    $$$('.pressure-choice').forEach(x=>x.classList.remove('active'));
     $('#betPressure').hidden=true;
   }else{
     $('#betPressure').hidden=false;
@@ -672,14 +672,14 @@ $('.post-state').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$('.pressure-choice').forEach(b=>b.onclick=()=>{
+$$('.pressure-choice').forEach(b=>b.onclick=()=>{
   markVisionManualOverride();
   const f=$('#reviewForm').elements;
-  $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
+  $$$('.pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
   f.post_action.value='facing_bet';
   f.bet_pressure.value=b.dataset.value;
-  $$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value==='facing_bet'));
+  $$$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value==='facing_bet'));
   $('#betPressure').hidden=false;
   invalidateReview();
   scheduleAnalysis();
@@ -754,7 +754,7 @@ function syncContext(){
 
   const facingBet=postflop && f.post_action.value==='facing_bet';
   if($('#betPressure')) $('#betPressure').hidden=!facingBet;
-  $$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value===f.post_action.value));
+  $$$('.post-state').forEach(x=>x.classList.toggle('active',x.dataset.value===f.post_action.value));
   if(!facingBet){
     f.bet_pressure.value='none';
     f.call_bb.value=0;
@@ -1084,10 +1084,10 @@ function setAutomaticPreflopUI(situation,pressure){
   const f=$('#reviewForm').elements;
   f.situation.value=situation;
   f.preflop_pressure.value=pressure||'none';
-  $('.pre-action').forEach(button=>{
+  $$('.pre-action').forEach(button=>{
     button.classList.toggle('active',button.dataset.value===situation);
   });
-  $('.pre-pressure-choice').forEach(button=>{
+  $$('.pre-pressure-choice').forEach(button=>{
     button.classList.toggle('active',button.dataset.value===pressure);
   });
   syncContext();
@@ -1097,10 +1097,10 @@ function setAutomaticPostflopUI(pressure){
   const f=$('#reviewForm').elements;
   f.post_action.value='facing_bet';
   f.bet_pressure.value=pressure;
-  $('.post-state').forEach(button=>{
+  $$('.post-state').forEach(button=>{
     button.classList.toggle('active',button.dataset.value==='facing_bet');
   });
-  $('.pressure-choice').forEach(button=>{
+  $$('.pressure-choice').forEach(button=>{
     button.classList.toggle('active',button.dataset.value===pressure);
   });
   if($('#betPressure')) $('#betPressure').hidden=false;
