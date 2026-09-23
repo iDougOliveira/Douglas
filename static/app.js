@@ -54,6 +54,7 @@ let visionPendingMaxSeats=null;
 let visionPendingConfirmedAt=0;
 let visionTableState='disabled';
 let visionInactivePoints=[];
+let visionSeatObservations=[];
 let visionLastState=null;
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
@@ -236,28 +237,37 @@ function seatLayout(count){
 }
 
 
-function nearestInactiveSlots(maxSeats,points){
-  const layout=seatLayout(maxSeats);
+function mapObservationsToCurrentSeats(observations,count){
+  const layout=seatLayout(count);
+  const mapped=new Map();
   const used=new Set();
-  (Array.isArray(points)?points:[]).forEach(point=>{
-    if(!Array.isArray(point)||point.length!==2) return;
-    const px=Number(point[0])*100;
-    const py=Number(point[1])*100;
-    let best=-1;
+  const source=(Array.isArray(observations)?observations:[])
+    .filter(obs=>obs && obs.status!=='inactive');
+
+  layout.forEach(([x,y],seatIndex)=>{
+    let bestIndex=-1;
     let bestDistance=Infinity;
-    layout.forEach(([x,y],i)=>{
-      if(used.has(i)) return;
-      const dx=(x-px)/100;
-      const dy=(y-py)/100;
+    source.forEach((obs,index)=>{
+      if(used.has(index)) return;
+      const ox=Number(obs.x)*100;
+      const oy=Number(obs.y)*100;
+      if(!Number.isFinite(ox)||!Number.isFinite(oy)) return;
+      const dx=(x-ox)/100;
+      const dy=(y-oy)/100;
       const distance=dx*dx+dy*dy;
       if(distance<bestDistance){
         bestDistance=distance;
-        best=i;
+        bestIndex=index;
       }
     });
-    if(best>=0 && bestDistance<=0.055) used.add(best);
+    // Fairly generous because PokerStars and the synthetic table do not use
+    // exactly the same ellipse proportions.
+    if(bestIndex>=0 && bestDistance<=0.095){
+      used.add(bestIndex);
+      mapped.set(seatIndex,source[bestIndex]);
+    }
   });
-  return used;
+  return mapped;
 }
 
 function renderVisionHealthOverlay(){
@@ -265,36 +275,41 @@ function renderVisionHealthOverlay(){
   if(!layer) return;
   layer.innerHTML='';
 
-  const maxSeats=Number(visionPendingMaxSeats||playerCount||8);
-  if(!SEAT_LAYOUTS[maxSeats]) return;
+  const count=Number(playerCount||8);
+  if(!SEAT_LAYOUTS[count]) return;
 
-  const inactive=nearestInactiveSlots(maxSeats,visionInactivePoints);
   const state=visionLastState||{};
   const tableError=visionTableState==='error';
   const tableConfirmed=visionTableState==='confirmed';
+  const mapped=mapObservationsToCurrentSeats(visionSeatObservations,count);
   const heroComplete=tableConfirmed
     && Boolean(state.confirmed)
     && Array.isArray(state.hand)
     && state.hand.length===2
     && Number(state.hero_stack_bb||0)>0;
 
-  seatLayout(maxSeats).forEach(([x,y],i)=>{
+  seatLayout(count).forEach(([x,y],i)=>{
     const dot=document.createElement('span');
+    const obs=mapped.get(i);
     let health='partial';
     let label='Informações parciais ou aguardando atualização';
 
-    if(inactive.has(i)){
-      health='absent';
-      label='Ausente ou lugar vazio';
-    }else if(tableError){
+    if(tableError){
       health='error';
       label='Erro na leitura automática; modo básico continua ativo';
+    }else if(obs?.status==='disconnected'){
+      health='partial';
+      label='Jogador desconectado; último dado conhecido mantido';
+    }else if(obs && Number(obs.stack_bb)>=0){
+      health='ok';
+      const name=obs.name?String(obs.name):`Assento ${i+1}`;
+      label=`${name} · stack ${Number(obs.stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
     }else if(i===0 && heroComplete){
       health='ok';
-      label='Leitura completa do seu assento';
+      label=`Você · stack ${Number(state.hero_stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
     }else if(tableConfirmed){
       health='partial';
-      label='Assento ativo; leitura ainda parcial';
+      label='Assento ativo; stack/nome ainda não confirmados';
     }
 
     dot.className=`vision-seat-dot ${health}`;
@@ -763,6 +778,7 @@ function applyVisionTableState(state){
   visionLastState=state;
   visionTableState=String(state?.table_scan_state||'disabled');
   visionInactivePoints=Array.isArray(state?.inactive_points)?state.inactive_points:[];
+  visionSeatObservations=Array.isArray(state?.seat_observations)?state.seat_observations:[];
   const count=Number(state?.detected_player_count||0);
   const inactive=Number(state?.inactive_seats??0);
   const maxSeats=Number(state?.table_max_seats||0);
