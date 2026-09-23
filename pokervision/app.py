@@ -22,10 +22,10 @@ from PIL import Image, ImageTk
 
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
-from table_ocr import analyze_table
+from table_ocr import SEAT_LAYOUTS, analyze_table, infer_player_count
 
 
-APP_VERSION = "0.11.2"
+APP_VERSION = "0.11.3"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -52,6 +52,7 @@ _BRIDGE_STATE = {
     "table_scan_state": "disabled",
     "table_scan_at": 0.0,
     "inactive_points": [],
+    "inactive_seat_indices": [],
     "seat_observations": [],
     "updated_at": 0.0,
 }
@@ -129,6 +130,7 @@ def _bridge_publish_table(data: dict) -> None:
         "table_scan_state",
         "table_scan_at",
         "inactive_points",
+        "inactive_seat_indices",
         "seat_observations",
     }
     with _BRIDGE_LOCK:
@@ -275,6 +277,7 @@ def start_beelink_publisher() -> None:
                                             "table_scan_state": "waiting",
                                             "table_scan_at": 0.0,
                                             "inactive_points": [],
+                                            "inactive_seat_indices": [],
                                             "seat_observations": [],
                                         })
                                         LOGGER.info(
@@ -596,6 +599,8 @@ class PokerVisionApp:
         self.last_logged_numeric_state = None
         self.last_logged_table_state = None
         self.player_memory: dict[str, dict] = {}
+        self.inactive_seat_memory: dict[int, float] = {}
+        self.active_seat_streak: dict[int, int] = {}
         self.player_round_key = None
         self.player_hand_key = None
         self.player_round_max_bet = 0.0
@@ -1306,6 +1311,53 @@ class PokerVisionApp:
             daemon=True,
         ).start()
 
+    def _stable_inactive_seats(
+        self,
+        data: dict,
+        max_seats: int,
+        now: float,
+    ) -> list[int]:
+        raw_inactive = {
+            int(value)
+            for value in data.get("inactive_seat_indices", [])
+            if isinstance(value, int) and 0 <= int(value) < max_seats
+        }
+        fresh_stack_seats = {
+            int(obs["seat_index"])
+            for obs in data.get("seat_observations", [])
+            if (
+                obs.get("seat_index") is not None
+                and obs.get("stack_bb") is not None
+                and 0 <= int(obs["seat_index"]) < max_seats
+            )
+        }
+
+        for seat in raw_inactive:
+            self.inactive_seat_memory[seat] = now
+            self.active_seat_streak[seat] = 0
+
+        # An inactive seat is cleared only after two consecutive OCR scans
+        # show a real stack on that exact physical seat.
+        for seat in list(self.inactive_seat_memory):
+            if seat in raw_inactive:
+                continue
+            if seat in fresh_stack_seats:
+                streak = int(self.active_seat_streak.get(seat, 0)) + 1
+                self.active_seat_streak[seat] = streak
+                if streak >= 2:
+                    self.inactive_seat_memory.pop(seat, None)
+                    self.active_seat_streak.pop(seat, None)
+            else:
+                self.active_seat_streak[seat] = 0
+
+        # Drop impossible indices if table capacity changes.
+        for seat in list(self.inactive_seat_memory):
+            if not 0 <= int(seat) < max_seats:
+                self.inactive_seat_memory.pop(seat, None)
+                self.active_seat_streak.pop(seat, None)
+
+        return sorted(self.inactive_seat_memory)
+
     def apply_table_result(self) -> None:
         with self.table_lock:
             data = dict(self.table_result) if self.table_result else None
@@ -1349,15 +1401,24 @@ class PokerVisionApp:
                 self.last_logged_table_state = signature
             return
 
-        count = int(data["player_count"])
-        inactive = int(data.get("inactive_seats", 0))
         max_seats = int(data.get("max_seats", _bridge_snapshot().get("table_max_seats", 9)))
-        points = data.get("inactive_points", [])
+        inactive_indices = self._stable_inactive_seats(data, max_seats, now)
+        inactive = len(inactive_indices)
+        count = infer_player_count(max_seats, inactive)
+        if count is None:
+            self.table_readout.configure(text="JOGADORES: leitura inconsistente")
+            return
+
+        points = [
+            [round(float(SEAT_LAYOUTS[max_seats][seat][0]), 4),
+             round(float(SEAT_LAYOUTS[max_seats][seat][1]), 4)]
+            for seat in inactive_indices
+        ]
         players = self._merge_player_observations(
             list(data.get("seat_observations", [])),
             now,
         )
-        signature = (count, inactive, max_seats)
+        signature = (count, inactive, tuple(inactive_indices), max_seats)
         self.table_tracker.observe(signature)
 
         if not (
@@ -1407,6 +1468,7 @@ class PokerVisionApp:
             "table_scan_state": "confirmed",
             "table_scan_at": now,
             "inactive_points": points,
+            "inactive_seat_indices": inactive_indices,
             "seat_observations": players,
         })
 
@@ -1636,6 +1698,8 @@ class PokerVisionApp:
         self.numeric_tracker.reset()
         self.table_tracker.reset()
         self.player_memory.clear()
+        self.inactive_seat_memory.clear()
+        self.active_seat_streak.clear()
         self.player_round_key = None
         self.player_hand_key = None
         self.player_round_max_bet = 0.0
@@ -1647,6 +1711,7 @@ class PokerVisionApp:
             "table_scan_state": "waiting" if self.config.get("table") else "disabled",
             "table_scan_at": 0.0,
             "inactive_points": [],
+            "inactive_seat_indices": [],
             "seat_observations": [],
         })
         self.running = True
