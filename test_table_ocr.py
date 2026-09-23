@@ -31,6 +31,23 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertIsNone(table_ocr.infer_player_count(9, 9))
         self.assertIsNone(table_ocr.infer_player_count(2, 2))
 
+    def test_stack_parser(self):
+        self.assertEqual(table_ocr.parse_stack_bb("89,7 BB"), 89.7)
+        self.assertEqual(table_ocr.parse_stack_bb("Player 216,9 BB"), 216.9)
+        self.assertIsNone(table_ocr.parse_stack_bb("Pote: 8,5"))
+
+    def test_seat_observation_pairing(self):
+        lines = [
+            {"text": "Alice", "x": 0.15, "y": 0.20},
+            {"text": "89,7 BB", "x": 0.15, "y": 0.24},
+            {"text": "Bob", "x": 0.82, "y": 0.20},
+            {"text": "72,7 BB", "x": 0.82, "y": 0.24},
+        ]
+        observations = table_ocr.build_seat_observations(lines)
+        self.assertEqual(len(observations), 2)
+        self.assertEqual(observations[0]["name"], "Alice")
+        self.assertEqual(observations[0]["stack_bb"], 89.7)
+
 
 if __name__ == "__main__":
     unittest.main()
