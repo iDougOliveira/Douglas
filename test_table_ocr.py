@@ -43,6 +43,20 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertEqual(table_ocr.parse_action_text("All In"), "ALL-IN")
         self.assertEqual(table_ocr.parse_action_text("texto qualquer"), "")
 
+    def test_action_only_allin_keeps_seat_observation(self):
+        perimeter = [
+            {"text": "Alice", "x": 0.15, "y": 0.20},
+            {"text": "All In", "x": 0.15, "y": 0.24},
+        ]
+        observations = table_ocr.build_seat_observations(
+            perimeter,
+            perimeter,
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0]["name"], "Alice")
+        self.assertIsNone(observations[0]["stack_bb"])
+        self.assertEqual(observations[0]["action"], "ALL-IN")
+
     def test_seat_observation_adds_bet_and_action(self):
         perimeter = [
             {"text": "Alice", "x": 0.15, "y": 0.20},
