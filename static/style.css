@@ -243,3 +243,11 @@ select[name="opener_position"] option{background:#0d1e18}
 .player-read.complete{border-color:#38d99677;color:#c9f9e7}
 .player-read.partial{border-color:#f2c94c77;color:#f9eaa1}
 .player-read.stale{border-color:#f2c94c55;color:#c7b970;opacity:.8}
+
+/* V3.14 — interface compacta */
+.compact-setup{justify-content:flex-start;align-items:end;gap:10px;margin-bottom:12px}
+.compact-setup label{min-width:140px;max-width:190px;font-size:12px;gap:4px}
+.compact-setup select{font-size:14px;padding:8px 30px 8px 10px}
+.vision-player-details,.vision-health-legend,#playerAutoStatus{display:none!important}
+.seat-stack{display:block;font-size:10px;color:#d5eee4;font-weight:700;margin-top:1px;white-space:nowrap}
+.seat-stack.stale{color:#f2c94c}
