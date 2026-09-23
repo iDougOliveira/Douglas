@@ -31,6 +31,20 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertIsNone(table_ocr.infer_player_count(9, 9))
         self.assertIsNone(table_ocr.infer_player_count(2, 2))
 
+    def test_pot_value_is_never_a_seat_stack(self):
+        lines = [
+            {"text": "Pote: 5,2 BB", "x": 0.50, "y": 0.24},
+            {"text": "104,7 BB", "x": 0.08, "y": 0.49},
+        ]
+        observations = table_ocr.build_seat_observations(
+            lines,
+            lines,
+            max_seats=9,
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0]["stack_bb"], 104.7)
+        self.assertEqual(observations[0]["seat_index"], 2)
+
     def test_explicit_pot_is_not_a_stack(self):
         self.assertEqual(table_ocr.parse_stack_bb("Pote: 6,62 BB"), 6.62)
 
@@ -79,6 +93,22 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertEqual(observations[0]["stack_bb"], 89.7)
         self.assertEqual(observations[0]["bet_bb"], 3.0)
         self.assertEqual(observations[0]["action"], "CALL")
+
+    def test_missing_stack_does_not_shift_physical_seat(self):
+        lines = [
+            {"text": "183,1 BB", "x": 0.13, "y": 0.24},
+            {"text": "104,7 BB", "x": 0.08, "y": 0.49},
+            {"text": "173 BB", "x": 0.18, "y": 0.73},
+        ]
+        observations = table_ocr.build_seat_observations(
+            lines,
+            lines,
+            max_seats=9,
+        )
+        seats = {item["seat_index"]: item["stack_bb"] for item in observations}
+        self.assertEqual(seats[3], 183.1)
+        self.assertEqual(seats[2], 104.7)
+        self.assertEqual(seats[1], 173.0)
 
     def test_seat_observation_pairing(self):
         lines = [
