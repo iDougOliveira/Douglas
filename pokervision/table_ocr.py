@@ -144,33 +144,51 @@ def build_seat_observations(
     lines: list[dict],
     all_lines: list[dict] | None = None,
 ) -> list[dict]:
-    """Pair seat plaques with name, stack, current bet and visible action."""
+    """Pair seat plaques with name, stack, current bet and visible action.
+
+    A PokerStars seat can replace its stack text with "All In", "Pago",
+    "Desisto", etc. Action-only plaques therefore remain observations even
+    when no stack number is visible in that OCR frame.
+    """
     all_lines = all_lines or lines
+    stack_lines = [
+        line for line in lines
+        if parse_stack_bb(line["text"]) is not None
+    ]
+    action_lines = [
+        line for line in lines
+        if parse_action_text(line["text"])
+    ]
+
+    anchors: list[tuple[dict, float | None, str]] = []
+    for line in stack_lines:
+        anchors.append((line, parse_stack_bb(line["text"]), ""))
+    for line in action_lines:
+        anchors.append((line, None, parse_action_text(line["text"])))
+
     observations: list[dict] = []
-    stack_lines = [line for line in lines if parse_stack_bb(line["text"]) is not None]
+    for anchor, stack, anchor_action in anchors:
+        sx = float(anchor["x"])
+        sy = float(anchor["y"])
 
-    for stack_line in stack_lines:
-        stack = parse_stack_bb(stack_line["text"])
-        sx = float(stack_line["x"])
-        sy = float(stack_line["y"])
-
-        inline_name = re.sub(
-            r"\d{1,5}(?:[.,]\d{1,2})?\s*BB\b",
-            "",
-            str(stack_line["text"]),
-            flags=re.IGNORECASE,
-        ).strip(" -|")
+        inline_name = ""
+        if stack is not None:
+            inline_name = re.sub(
+                r"\d{1,5}(?:[.,]\d{1,2})?\s*BB\b",
+                "",
+                str(anchor["text"]),
+                flags=re.IGNORECASE,
+            ).strip(" -|")
         name = inline_name if plausible_name(inline_name) else ""
 
         if not name:
             candidates = []
             for line in lines:
-                if line is stack_line or not plausible_name(line["text"]):
+                if line is anchor or not plausible_name(line["text"]):
                     continue
                 dx = float(line["x"]) - sx
                 dy = float(line["y"]) - sy
-                # Name and stack normally share the same seat plaque.
-                if abs(dx) <= 0.14 and abs(dy) <= 0.12:
+                if abs(dx) <= 0.15 and abs(dy) <= 0.13:
                     score = (dx * dx) + (dy * dy * 1.8)
                     candidates.append((score, line["text"]))
             if candidates:
@@ -182,7 +200,7 @@ def build_seat_observations(
         for line in lines:
             dx = float(line["x"]) - sx
             dy = float(line["y"]) - sy
-            if abs(dx) <= 0.13 and abs(dy) <= 0.11:
+            if abs(dx) <= 0.14 and abs(dy) <= 0.12:
                 nearby_text.append(str(line["text"]))
         joined = " ".join(nearby_text)
         if is_inactive_label(joined):
@@ -190,8 +208,8 @@ def build_seat_observations(
         elif is_disconnected_label(joined):
             status = "disconnected"
 
-        bet_bb = _nearest_inward_bet(sx, sy, all_lines, stack_line)
-        action = _nearby_action(sx, sy, all_lines)
+        bet_bb = _nearest_inward_bet(sx, sy, all_lines, anchor)
+        action = anchor_action or _nearby_action(sx, sy, all_lines)
         if action == "ALL-IN":
             status = "active"
 
@@ -203,28 +221,46 @@ def build_seat_observations(
             "bet_bb": bet_bb,
             "action": action or "unknown",
             "status": status,
-            "raw": str(stack_line["text"])[:80],
+            "raw": str(anchor["text"])[:80],
         })
 
-    # OCR can duplicate the same stack plaque. Keep only one observation per
-    # nearby seat, preferring the one with a name.
+    # Merge multiple OCR fragments belonging to the same seat. Preserve all
+    # useful fields; action-only frames must not erase a stack reading.
     deduped: list[dict] = []
     for obs in observations:
         duplicate = None
         for existing in deduped:
-            if (
-                abs(obs["x"] - existing["x"]) <= 0.045
-                and abs(obs["y"] - existing["y"]) <= 0.045
-            ):
+            same_name = (
+                obs["name"]
+                and existing["name"]
+                and fold_text(obs["name"]) == fold_text(existing["name"])
+            )
+            nearby = (
+                abs(obs["x"] - existing["x"]) <= 0.055
+                and abs(obs["y"] - existing["y"]) <= 0.055
+            )
+            if same_name or nearby:
                 duplicate = existing
                 break
+
         if duplicate is None:
             deduped.append(obs)
-        elif obs["name"] and not duplicate["name"]:
-            duplicate.update(obs)
+            continue
+
+        if obs["name"] and not duplicate["name"]:
+            duplicate["name"] = obs["name"]
+        if obs["stack_bb"] is not None:
+            duplicate["stack_bb"] = obs["stack_bb"]
+        if obs["bet_bb"] is not None:
+            duplicate["bet_bb"] = obs["bet_bb"]
+        if str(obs["action"]).upper() != "UNKNOWN":
+            duplicate["action"] = obs["action"]
+        if obs["status"] != "active":
+            duplicate["status"] = obs["status"]
+        if obs["raw"]:
+            duplicate["raw"] = (duplicate["raw"] + " | " + obs["raw"])[:80]
 
     return deduped[:10]
-
 
 def cluster_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
     """Merge OCR fragments that belong to the same seat label."""
