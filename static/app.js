@@ -62,6 +62,7 @@ let visionLastState=null;
 let visionPlayerAutoEnabled=true;
 let visionManualOverrideKey='';
 let visionAutoLastSignature='';
+let lastValidPositionState=null;
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
 
@@ -230,8 +231,16 @@ function positionTag(position){
 
 function renderPositionLegend(){
   const box=$('#positionLegend');
-  if(!box || !positionOrder[playerCount]) return;
-  box.innerHTML=positionOrder[playerCount]
+  if(!box) return;
+  const state=buildPhysicalPositionState();
+  let positions=positionOrder?.[state.engineCount]||[];
+  if(state.deadButton){
+    positions=positions.filter(
+      position=>position!=='BTN' && position!=='BTN/SB'
+    );
+  }
+  if(!positions.length) positions=positionOrder?.[playerCount]||[];
+  box.innerHTML=positions
     .map(pos=>`<span class="position-legend-item" style="--pos-color:${positionColor(pos)}"><i></i>${escapeHTML(pos)}</span>`)
     .join('');
 }
@@ -283,39 +292,129 @@ function activePhysicalSeats(){
   return seats;
 }
 
-function enginePlayerCountForButton(){
+function visionPhysicalSeatStateFresh(){
+  const scanAt=Number(visionLastState?.table_scan_at||0);
+  const age=scanAt>0 ? Math.max(0,(Date.now()/1000)-scanAt) : Infinity;
+  return Boolean(
+    visionEnabled
+    && visionTableState==='confirmed'
+    && Number.isFinite(age)
+    && age<=6
+  );
+}
+
+function positionActiveSeats(){
   const active=activePhysicalSeats();
-  const deadButton=!active.includes(dealerSeat);
-  if(deadButton && playerCount<physicalSeatCount() && positionOrder[playerCount+1]){
-    return playerCount+1;
+
+  // When PokerVision has a fresh confirmed physical-seat map, that map wins.
+  // It must not be blocked by a stale player-count dropdown from the previous
+  // hand/table state.
+  if(
+    visionPhysicalSeatStateFresh()
+    && active.length>=2
+    && active.length<=10
+    && positionOrder?.[active.length]
+  ){
+    return active;
   }
-  return playerCount;
+
+  // Manual/basic mode keeps the previous behaviour when the selected count
+  // already agrees with the physical active-seat map.
+  if(active.length===playerCount && positionOrder?.[playerCount]){
+    return active;
+  }
+
+  return null;
+}
+
+function buildPhysicalPositionState(){
+  const physicalCount=physicalSeatCount();
+  const active=positionActiveSeats();
+
+  if(active){
+    const activeCount=active.length;
+    const deadButton=!active.includes(dealerSeat);
+    const engineCount=(
+      deadButton
+      && activeCount<physicalCount
+      && positionOrder?.[activeCount+1]
+    )
+      ? activeCount+1
+      : activeCount;
+
+    let positions=positionOrder?.[engineCount]||[];
+    if(deadButton){
+      positions=positions.filter(
+        position=>position!=='BTN' && position!=='BTN/SB'
+      );
+    }
+
+    if(positions.length===active.length){
+      const ordered=[];
+      const firstStep=deadButton?1:0;
+      for(let step=firstStep;step<physicalCount+firstStep;step++){
+        const seat=(dealerSeat+step)%physicalCount;
+        if(active.includes(seat) && !ordered.includes(seat)){
+          ordered.push(seat);
+        }
+      }
+
+      if(ordered.length===active.length){
+        const map=new Map();
+        ordered.forEach((seat,index)=>{
+          if(positions[index]) map.set(seat,positions[index]);
+        });
+
+        if(map.size===active.length){
+          const state={
+            physicalCount,
+            dealerSeat,
+            active:[...active],
+            engineCount,
+            deadButton,
+            mapEntries:[...map.entries()],
+            fallback:false,
+          };
+          lastValidPositionState=state;
+          return {...state,map};
+        }
+      }
+    }
+  }
+
+  // Never blank a valid position in the middle of a hand because one OCR
+  // frame or a delayed count disagreed. Keep the last known-good map for the
+  // same physical table/button until a new valid map is available.
+  if(
+    lastValidPositionState
+    && lastValidPositionState.physicalCount===physicalCount
+    && lastValidPositionState.dealerSeat===dealerSeat
+  ){
+    return {
+      ...lastValidPositionState,
+      map:new Map(lastValidPositionState.mapEntries),
+      fallback:true,
+    };
+  }
+
+  return {
+    physicalCount,
+    dealerSeat,
+    active:[],
+    engineCount:playerCount,
+    deadButton:false,
+    map:new Map(),
+    mapEntries:[],
+    fallback:true,
+  };
+}
+
+function enginePlayerCountForButton(){
+  return buildPhysicalPositionState().engineCount;
 }
 
 function physicalPositionMap(){
-  const map=new Map();
-  const active=activePhysicalSeats();
-  if(active.length!==playerCount) return map;
-
-  const count=physicalSeatCount();
-  const deadButton=!active.includes(dealerSeat);
-  const engineCount=enginePlayerCountForButton();
-  let positions=positionOrder[engineCount]||[];
-  if(deadButton){
-    positions=positions.filter(position=>position!=='BTN' && position!=='BTN/SB');
-  }
-  if(!positions.length || positions.length!==active.length) return map;
-
-  const ordered=[];
-  const firstStep=deadButton?1:0;
-  for(let step=firstStep;step<count+firstStep;step++){
-    const seat=(dealerSeat+step)%count;
-    if(active.includes(seat) && !ordered.includes(seat)) ordered.push(seat);
-  }
-  ordered.forEach((seat,index)=>{
-    if(positions[index]) map.set(seat,positions[index]);
-  });
-  return map;
+  return buildPhysicalPositionState().map;
 }
 
 function mapObservationsToCurrentSeats(observations,_count){
@@ -450,11 +549,12 @@ function renderVisionHealthOverlay(){
 }
 
 function renderTable(){
-  if(!positionOrder[playerCount]) return;
+  if(!positionOrder) return;
 
+  const positionState=buildPhysicalPositionState();
   const physicalCount=physicalSeatCount();
   const inactive=inactivePhysicalSeats();
-  const positions=physicalPositionMap();
+  const positions=positionState.map;
   const mappedStacks=mapObservationsToCurrentSeats(
     visionSeatObservations,
     physicalCount
@@ -514,22 +614,29 @@ function renderTable(){
     applyPositionColor($('.position-readout'),heroPos);
     $('#reviewForm').elements.position.value=heroPos;
   }else{
-    $('#heroPosition').textContent='AGUARDANDO';
-    applyPositionColor($('#heroPosition'),'');
-    applyPositionColor($('.position-readout'),'');
-    $('#reviewForm').elements.position.value='';
+    const previous=$('#reviewForm').elements.position.value;
+    if(previous){
+      $('#heroPosition').textContent=previous;
+      applyPositionColor($('#heroPosition'),previous);
+      applyPositionColor($('.position-readout'),previous);
+    }else{
+      $('#heroPosition').textContent='—';
+      applyPositionColor($('#heroPosition'),'');
+      applyPositionColor($('.position-readout'),'');
+    }
   }
 
-  const activeSeats=activePhysicalSeats();
-  const deadButton=!activeSeats.includes(dealerSeat);
-  const engineCount=enginePlayerCountForButton();
+  const activeSeats=positionState.active;
+  const engineCount=positionState.engineCount;
   $('#reviewForm').elements.player_count.value=engineCount;
-  const reliable=activeSeats.length===playerCount && positions.size===activeSeats.length;
+  const reliable=positions.size>=2 && activeSeats.length===positions.size;
   $('#tableHint').textContent=reliable
-    ? deadButton
-      ? `Botão em assento ausente · posições calculadas como botão morto · ${playerCount} jogadores ativos.`
-      : `Mesa física de ${physicalCount} lugares · ${playerCount} jogadores ativos. Clique no mesmo lugar do botão real.`
-    : `Aguardando mapear os assentos ativos (${activeSeats.length}/${playerCount}). Os lugares físicos permanecem fixos.`;
+    ? positionState.fallback
+      ? `Leitura da mesa oscilou · mantendo o último mapa válido de posições.`
+      : positionState.deadButton
+      ? `Botão em assento ausente · posições calculadas como botão morto · ${activeSeats.length} jogadores ativos.`
+      : `Mesa física de ${physicalCount} lugares · ${activeSeats.length} jogadores ativos. Clique no mesmo lugar do botão real.`
+    : `Modo básico ativo · mantendo a última posição válida enquanto a mesa é confirmada.`;
 
   const playerSelect=$('#playerCountSelect');
   if(playerSelect) playerSelect.value=String(playerCount);
@@ -1213,6 +1320,21 @@ function applyVisionTableState(state){
     visionPendingInactiveSeats=Number.isFinite(inactive)?inactive:null;
     visionPendingMaxSeats=Number.isInteger(maxSeats)?maxSeats:null;
     visionPendingConfirmedAt=scanAt;
+
+    const physicalActiveCount=activePhysicalSeats().length;
+    if(
+      physicalActiveCount===count
+      && positionOrder?.[count]
+      && playerCount!==count
+    ){
+      playerCount=count;
+      try{
+        localStorage.setItem('pokercoach.playerCount',String(count));
+      }catch(e){}
+      const select=$('#playerCountSelect');
+      if(select) select.value=String(count);
+      renderTable();
+    }
     if(meter){
       const inactiveText=visionPendingInactiveSeats!=null
         ? ` · ${visionPendingInactiveSeats} ausente(s)/vazio(s)`
@@ -1383,8 +1505,18 @@ function initPokerVision(){
 
 function readiness(){
   const f=$('#reviewForm').elements;
-  if(!f.position.value)
-    return 'Aguardando mapear os assentos ativos e o botão.';
+  if(!f.position.value){
+    const state=buildPhysicalPositionState();
+    const hero=state.map.get(0);
+    if(hero){
+      f.position.value=hero;
+      $('#heroPosition').textContent=hero;
+      applyPositionColor($('#heroPosition'),hero);
+      applyPositionColor($('.position-readout'),hero);
+    }else{
+      return 'Selecione o assento do botão para iniciar a posição.';
+    }
+  }
   if(!f.card1.value||!f.card2.value)
     return 'Escolha suas duas cartas.';
   const n=boardCount();
