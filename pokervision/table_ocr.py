@@ -9,6 +9,7 @@ It never imports or modifies the card recognizer.
 
 from collections import defaultdict
 import math
+import re
 import unicodedata
 
 
@@ -27,6 +28,115 @@ def is_inactive_label(text: str) -> bool:
     if "FICAR DE FORA" in folded:
         return False
     return "AUSENT" in folded or "VAZIO" in folded
+
+
+def is_disconnected_label(text: str) -> bool:
+    folded = fold_text(text)
+    return "DESCONECT" in folded
+
+
+def parse_stack_bb(text: str) -> float | None:
+    folded = fold_text(text).replace(",", ".")
+    match = re.search(r"(?<![0-9])(\d{1,5}(?:\.\d{1,2})?)\s*BB\b", folded)
+    if not match:
+        return None
+    try:
+        value = float(match.group(1))
+    except ValueError:
+        return None
+    return value if 0 <= value <= 100000 else None
+
+
+def plausible_name(text: str) -> bool:
+    folded = fold_text(text)
+    if not folded or len(folded) < 2 or len(folded) > 32:
+        return False
+    blocked = (
+        "POTE", "JOGO RESPONSAVEL", "RECONHECIMENTO", "PROXIMA MAO",
+        "BIG BLIND", "DESISTIR", "APOSTA", "AUMENTO", "PAGO",
+        "MIN", "MAX", "BB", "ET",
+    )
+    if any(token in folded for token in blocked):
+        return False
+    if is_inactive_label(folded) or is_disconnected_label(folded):
+        return False
+    letters = sum(ch.isalpha() for ch in folded)
+    return letters >= 2
+
+
+def build_seat_observations(lines: list[dict]) -> list[dict]:
+    """Pair perimeter stack labels with the nearest plausible player name."""
+    observations: list[dict] = []
+    stack_lines = [line for line in lines if parse_stack_bb(line["text"]) is not None]
+
+    for stack_line in stack_lines:
+        stack = parse_stack_bb(stack_line["text"])
+        sx = float(stack_line["x"])
+        sy = float(stack_line["y"])
+
+        inline_name = re.sub(
+            r"\d{1,5}(?:[.,]\d{1,2})?\s*BB\b",
+            "",
+            str(stack_line["text"]),
+            flags=re.IGNORECASE,
+        ).strip(" -|")
+        name = inline_name if plausible_name(inline_name) else ""
+
+        if not name:
+            candidates = []
+            for line in lines:
+                if line is stack_line or not plausible_name(line["text"]):
+                    continue
+                dx = float(line["x"]) - sx
+                dy = float(line["y"]) - sy
+                # Name and stack normally share the same seat plaque.
+                if abs(dx) <= 0.14 and abs(dy) <= 0.12:
+                    score = (dx * dx) + (dy * dy * 1.8)
+                    candidates.append((score, line["text"]))
+            if candidates:
+                candidates.sort(key=lambda item: item[0])
+                name = str(candidates[0][1]).strip()
+
+        status = "active"
+        nearby_text = []
+        for line in lines:
+            dx = float(line["x"]) - sx
+            dy = float(line["y"]) - sy
+            if abs(dx) <= 0.13 and abs(dy) <= 0.11:
+                nearby_text.append(str(line["text"]))
+        joined = " ".join(nearby_text)
+        if is_inactive_label(joined):
+            status = "inactive"
+        elif is_disconnected_label(joined):
+            status = "disconnected"
+
+        observations.append({
+            "x": round(sx, 4),
+            "y": round(sy, 4),
+            "name": name[:32],
+            "stack_bb": stack,
+            "status": status,
+            "raw": str(stack_line["text"])[:80],
+        })
+
+    # OCR can duplicate the same stack plaque. Keep only one observation per
+    # nearby seat, preferring the one with a name.
+    deduped: list[dict] = []
+    for obs in observations:
+        duplicate = None
+        for existing in deduped:
+            if (
+                abs(obs["x"] - existing["x"]) <= 0.045
+                and abs(obs["y"] - existing["y"]) <= 0.045
+            ):
+                duplicate = existing
+                break
+        if duplicate is None:
+            deduped.append(obs)
+        elif obs["name"] and not duplicate["name"]:
+            duplicate.update(obs)
+
+    return deduped[:10]
 
 
 def cluster_points(points: list[tuple[float, float]]) -> list[tuple[float, float]]:
@@ -154,7 +264,11 @@ def analyze_table(image, max_seats: int = 9) -> dict:
         bottom = max(item["top"] + item["height"] for item in words)
         cx = (left + right) / 2
         cy = (top + bottom) / 2
-        lines.append({"text": line_text, "x": cx / width, "y": cy / height})
+        lines.append({
+            "text": line_text,
+            "x": cx / width,
+            "y": cy / height,
+        })
         if is_inactive_label(line_text):
             inactive_points.append((cx / width, cy / height))
 
@@ -169,6 +283,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
 
     confidence = "alta" if evidence_words >= max(5, max_seats) else "média"
     raw = " | ".join(line["text"] for line in lines)[:320]
+    seat_observations = build_seat_observations(lines)
 
     return {
         "valid": valid,
@@ -179,6 +294,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
             [round(float(x), 4), round(float(y), 4)]
             for x, y in inactive_clusters[:10]
         ],
+        "seat_observations": seat_observations,
         "evidence_words": evidence_words,
         "confidence": confidence if valid else "baixa",
         "raw_text": raw,
