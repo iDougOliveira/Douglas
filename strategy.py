@@ -3,7 +3,9 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.10.0"
+from spin_strategy import decide_spin
+
+ENGINE_VERSION = "3.17.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -116,11 +118,22 @@ def context(data):
     if pos not in POSITIONS[n]:
         raise ValueError("Posição incompatível com a mesa.")
     mode = data.get("mode", "cash")
-    if mode not in {"cash", "tournament"}:
+    if mode not in {"cash", "tournament", "spin"}:
         raise ValueError("Formato inválido.")
     card1, card2 = str(data.get("card1", "")).strip().upper(), str(data.get("card2", "")).strip().upper()
     hand = normalize_hand(card1, card2)
     hero_stack = number(data, "stack_bb", 100, 0.1)
+    opponent_stacks = []
+    raw_opponents = data.get("opponent_stacks_bb") or []
+    if isinstance(raw_opponents, (list, tuple)):
+        for raw_stack in raw_opponents[:9]:
+            try:
+                value = float(raw_stack)
+            except (ValueError, TypeError):
+                continue
+            if math.isfinite(value) and value > 0:
+                opponent_stacks.append(value)
+
     raw_effective = data.get("effective_stack_bb")
     if raw_effective in (None, "", 0, "0"):
         effective_stack = hero_stack
@@ -131,10 +144,20 @@ def context(data):
             number(data, "effective_stack_bb", hero_stack, 0.1),
         )
         effective_from_vision = bool(data.get("auto_player_action"))
+
+    # Spin strategy is driven by effective BB, not a fixed starting stack.
+    # PokerVision already relays stable opponent stacks without using OCR
+    # actions as decision inputs. For HU this is exact; for 3-handed the
+    # dedicated module labels the shortest-stack approximation explicitly.
+    if mode == "spin" and opponent_stacks:
+        effective_stack = min([hero_stack] + opponent_stacks)
+        effective_from_vision = True
+
     return {"players": n, "position": pos, "mode": mode,
             "stack": hero_stack,
             "effective_stack": effective_stack,
             "effective_from_vision": effective_from_vision,
+            "opponent_stacks": opponent_stacks,
             "hand": hand, "hole": [card1, card2],
             "ante": number(data, "ante_bb", 0)}
 
@@ -159,6 +182,8 @@ def decide(data):
     street = data.get("street", "preflop")
     if street not in {"preflop", "flop", "turn", "river", "postflop"}:
         raise ValueError("Etapa da mão inválida.")
+    if c["mode"] == "spin":
+        return decide_spin(data, c, r, postflop)
     if street != "preflop":
         return postflop(data, c, r)
     situation = data.get("situation", "unopened")
