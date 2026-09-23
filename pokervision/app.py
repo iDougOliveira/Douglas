@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.11.1"
+APP_VERSION = "0.11.2"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -1082,6 +1082,12 @@ class PokerVisionApp:
         return None if value is None else round(float(value), 4)
 
     def _player_key(self, obs: dict) -> str:
+        seat_index = obs.get("seat_index")
+        if seat_index is not None:
+            try:
+                return f"seat:{int(seat_index)}"
+            except (TypeError, ValueError):
+                pass
         x = float(obs.get("x", 0))
         y = float(obs.get("y", 0))
         best_key = None
@@ -1147,6 +1153,8 @@ class PokerVisionApp:
                 memory["name"] = name
             memory["x"] = float(obs.get("x", memory.get("x", 0)))
             memory["y"] = float(obs.get("y", memory.get("y", 0)))
+            if obs.get("seat_index") is not None:
+                memory["seat_index"] = int(obs["seat_index"])
             memory["status"] = str(obs.get("status", "active"))
 
             stack = obs.get("stack_bb")
@@ -1222,6 +1230,7 @@ class PokerVisionApp:
             # The last reliable stack therefore remains available as context;
             # the action tells the site that the player has committed it.
             result = {
+                "seat_index": memory.get("seat_index"),
                 "x": memory.get("x", 0),
                 "y": memory.get("y", 0),
                 "name": memory.get("name", ""),
@@ -1245,9 +1254,10 @@ class PokerVisionApp:
             if key in current_keys or not memory.get("name"):
                 continue
             age = max(0.0, now - float(memory.get("last_seen", 0) or 0))
-            if age > 12:
+            if age > 90:
                 continue
             enriched.append({
+                "seat_index": memory.get("seat_index"),
                 "x": memory.get("x", 0),
                 "y": memory.get("y", 0),
                 "name": memory.get("name", ""),
