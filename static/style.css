@@ -256,8 +256,14 @@ select[name="opener_position"] option{background:#0d1e18}
   background:#080b0a!important;
   border-color:#28322e!important;
   opacity:.72;
-  cursor:not-allowed;
+  cursor:pointer;
   box-shadow:none!important;
 }
 .seat.inactive b,.seat.inactive .avatar{color:#67736e!important}
 .seat.inactive i{display:none}
+
+.seat.inactive.dealer{
+  border-color:#a78bfa!important;
+  box-shadow:0 0 0 2px #a78bfa55!important;
+  opacity:.9;
+}
