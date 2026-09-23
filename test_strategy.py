@@ -209,6 +209,40 @@ class StrategyTest(unittest.TestCase):
         )
         self.assertEqual(improved["action"], "CALL")
 
+    def test_tripled_board_full_house_is_relative_not_auto_stackoff(self):
+        # Regression from screenshot: 66 on A-4-4-K-4 is 44466, but many
+        # superior full houses exist (Ax, Kx, higher pocket pairs).
+        checked = review(
+            mode="cash", player_count=8, position="BTN", stack_bb=31.1,
+            card1="6h", card2="6c", street="river",
+            flop1="As", flop2="4c", flop3="4s", turn="Kc", river="4d",
+            pot_bb=130.1, call_bb=0,
+            post_action="checked_to_hero", bet_pressure="none",
+        )
+        self.assertEqual(checked["action"], "CHECK")
+        self.assertIn("board triplicado", checked["hand_class"])
+        self.assertNotIn("bet_bb", checked)
+
+        facing_shove = review(
+            mode="cash", player_count=8, position="BTN", stack_bb=31.1,
+            card1="6h", card2="6c", street="river",
+            flop1="As", flop2="4c", flop3="4s", turn="Kc", river="4d",
+            pot_bb=130.1, call_bb=0,
+            post_action="facing_bet", bet_pressure="allin",
+        )
+        self.assertEqual(facing_shove["action"], "FOLD")
+
+    def test_postflop_bet_never_exceeds_stack(self):
+        result = review(
+            mode="cash", player_count=6, position="BTN", stack_bb=10,
+            card1="Ah", card2="Ad", street="flop",
+            flop1="As", flop2="Kd", flop3="7c",
+            pot_bb=40, call_bb=0,
+            post_action="checked_to_hero", bet_pressure="none",
+        )
+        self.assertLessEqual(result.get("bet_bb", 0), 10)
+        self.assertEqual(result["action"], "ALL-IN")
+
     def test_turn_and_river_require_board(self):
         r = review(
             card1="As", card2="Qh", street="turn",
