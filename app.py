@@ -33,7 +33,21 @@ POSITION_ORDER = strategy.POSITIONS
 VISION_LOCK = threading.Lock()
 VISION_STATES: dict[str, dict] = {}
 VISION_CONFIG_LOCK = threading.Lock()
-VISION_CONFIG = {"table_max_seats": 9}
+VISION_CONFIG_PATH = ROOT / "data" / "vision_config.json"
+
+
+def load_vision_config() -> dict:
+    try:
+        data = json.loads(VISION_CONFIG_PATH.read_text(encoding="utf-8"))
+        max_seats = int(data.get("table_max_seats", 9))
+        if 2 <= max_seats <= 10:
+            return {"table_max_seats": max_seats}
+    except (OSError, ValueError, TypeError, json.JSONDecodeError):
+        pass
+    return {"table_max_seats": 9}
+
+
+VISION_CONFIG = load_vision_config()
 VISION_TTL_SECONDS = 3.0
 VISION_STREETS = {"AGUARDANDO", "PRÉ-FLOP", "FLOP", "TURN", "RIVER", "INCERTO", "TRANSIÇÃO"}
 
@@ -41,6 +55,18 @@ VISION_STREETS = {"AGUARDANDO", "PRÉ-FLOP", "FLOP", "TURN", "RIVER", "INCERTO",
 def vision_config_snapshot() -> dict:
     with VISION_CONFIG_LOCK:
         return dict(VISION_CONFIG)
+
+
+def save_vision_config() -> None:
+    VISION_CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temp = VISION_CONFIG_PATH.with_suffix(".tmp")
+    with VISION_CONFIG_LOCK:
+        payload = dict(VISION_CONFIG)
+    temp.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    temp.replace(VISION_CONFIG_PATH)
 
 
 def private_client(address: str) -> bool:
@@ -123,12 +149,23 @@ def normalized_seat_observations(value: object) -> list[dict]:
         status = str(item.get("status", "active"))
         if status not in {"active", "inactive", "disconnected"}:
             status = "active"
+        action = str(item.get("action", "unknown")).upper()
+        if action not in {"UNKNOWN", "FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL-IN"}:
+            action = "UNKNOWN"
+        data_state = str(item.get("data_state", "partial")).lower()
+        if data_state not in {"complete", "partial", "stale"}:
+            data_state = "partial"
         clean.append({
             "x": x,
             "y": y,
             "name": str(item.get("name", ""))[:32],
             "stack_bb": stack,
+            "bet_bb": optional_nonnegative_number(item.get("bet_bb")),
+            "action": action,
             "status": status,
+            "stale": bool(item.get("stale", False)),
+            "last_seen_age": optional_nonnegative_number(item.get("last_seen_age")),
+            "data_state": data_state,
             "raw": str(item.get("raw", ""))[:80],
         })
     return clean
@@ -386,6 +423,7 @@ class Handler(SimpleHTTPRequestHandler):
                     raise ValueError("Informe a capacidade da mesa.")
                 with VISION_CONFIG_LOCK:
                     VISION_CONFIG["table_max_seats"] = max_seats
+                save_vision_config()
                 return self.send_json(vision_config_snapshot())
             if path == "/api/analyze":
                 return self.send_json(analyze(data))
