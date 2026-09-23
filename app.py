@@ -155,6 +155,23 @@ def normalized_seat_observations(value: object) -> list[dict]:
         data_state = str(item.get("data_state", "partial")).lower()
         if data_state not in {"complete", "partial", "stale"}:
             data_state = "partial"
+        history = []
+        raw_history = item.get("action_history", [])
+        if isinstance(raw_history, list):
+            for event in raw_history[:12]:
+                if not isinstance(event, dict):
+                    continue
+                event_action = str(event.get("action", "UNKNOWN")).upper()
+                if event_action not in {
+                    "FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL-IN"
+                }:
+                    continue
+                history.append({
+                    "action": event_action,
+                    "bet_bb": optional_nonnegative_number(event.get("bet_bb")),
+                    "at": optional_nonnegative_number(event.get("at")),
+                })
+
         clean.append({
             "x": x,
             "y": y,
@@ -163,6 +180,7 @@ def normalized_seat_observations(value: object) -> list[dict]:
             "bet_bb": optional_nonnegative_number(item.get("bet_bb")),
             "action": action,
             "action_at": optional_nonnegative_number(item.get("action_at")),
+            "action_history": history,
             "status": status,
             "stale": bool(item.get("stale", False)),
             "last_seen_age": optional_nonnegative_number(item.get("last_seen_age")),
