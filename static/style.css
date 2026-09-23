@@ -227,3 +227,13 @@ select[name="opener_position"] option{background:#0d1e18}
 .vision-health-legend i.partial{background:#f2c94c}
 .vision-health-legend i.error{background:#ef4444}
 .vision-health-legend i.absent{background:#050706}
+
+.setup-bar{align-items:flex-start}
+.setup-group{display:flex;flex-direction:column;gap:6px;min-width:260px}
+.setup-label{color:var(--muted);font-size:13px}
+.setup-group small,.players small{color:var(--muted);font-size:11px;line-height:1.35}
+.game-types{flex-wrap:wrap}
+.game-type,.table-capacity{min-width:42px;padding:9px 10px}
+.game-type.active,.table-capacity.active{background:var(--green);color:#04120d;font-weight:800}
+.game-type:disabled{opacity:.45;cursor:not-allowed}
+#tableCapacity{flex-wrap:wrap}
