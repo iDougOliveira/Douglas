@@ -99,6 +99,34 @@ def normalized_points(value: object) -> list[list[float]]:
     return clean
 
 
+def normalized_seat_observations(value: object) -> list[dict]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError("Leituras de assentos inválidas.")
+    clean = []
+    for item in value:
+        if not isinstance(item, dict):
+            raise ValueError("Leitura de assento inválida.")
+        x = float(item.get("x", -1))
+        y = float(item.get("y", -1))
+        if not (0 <= x <= 1 and 0 <= y <= 1):
+            raise ValueError("Coordenada de assento inválida.")
+        stack = optional_nonnegative_number(item.get("stack_bb"))
+        status = str(item.get("status", "active"))
+        if status not in {"active", "inactive", "disconnected"}:
+            status = "active"
+        clean.append({
+            "x": x,
+            "y": y,
+            "name": str(item.get("name", ""))[:32],
+            "stack_bb": stack,
+            "status": status,
+            "raw": str(item.get("raw", ""))[:80],
+        })
+    return clean
+
+
 def normalize_vision_payload(data: dict) -> dict:
     if not isinstance(data, dict):
         raise ValueError("Estado visual inválido.")
@@ -186,6 +214,9 @@ def normalize_vision_payload(data: dict) -> dict:
         ),
         "table_scan_at": optional_nonnegative_number(data.get("table_scan_at")),
         "inactive_points": normalized_points(data.get("inactive_points", [])),
+        "seat_observations": normalized_seat_observations(
+            data.get("seat_observations", [])
+        ),
         "updated_at": float(data.get("updated_at", 0) or 0),
     }
 
