@@ -269,6 +269,97 @@ class StrategyTest(unittest.TestCase):
         self.assertEqual(result["call_bb"], 35)
         self.assertEqual(result["effective_stack_bb"], 35)
 
+    def test_spin_three_handed_button_depths(self):
+        deep = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=25,
+            opponent_stacks_bb=[25, 25],
+            card1="7s", card2="6s",
+        )
+        self.assertEqual(deep["action"], "RAISE")
+        self.assertEqual(deep["raise_to_bb"], 2)
+        self.assertEqual(deep["spin_phase"], "three_handed")
+
+        short = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=10,
+            opponent_stacks_bb=[10, 10],
+            card1="As", card2="5h",
+        )
+        self.assertEqual(short["action"], "ALL-IN")
+        self.assertEqual(short["effective_stack_bb"], 10)
+
+        premium = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=10,
+            opponent_stacks_bb=[10, 10],
+            card1="Ts", card2="Th",
+        )
+        self.assertEqual(premium["action"], "RAISE")
+        self.assertEqual(premium["raise_to_bb"], 2)
+
+    def test_spin_uses_shortest_detected_effective_stack(self):
+        result = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=25,
+            opponent_stacks_bb=[9, 18],
+            card1="As", card2="5h",
+        )
+        self.assertEqual(result["effective_stack_bb"], 9)
+        self.assertEqual(result["action"], "ALL-IN")
+        self.assertIn("9 BB", " ".join(result["notes"]))
+
+    def test_spin_small_blind_vs_button_raise(self):
+        jam = review(
+            mode="spin", player_count=3, position="SB", stack_bb=25,
+            opponent_stacks_bb=[25, 25],
+            situation="facing_raise", preflop_pressure="medium",
+            card1="8s", card2="8h",
+        )
+        self.assertEqual(jam["action"], "ALL-IN")
+
+        premium = review(
+            mode="spin", player_count=3, position="SB", stack_bb=25,
+            opponent_stacks_bb=[25, 25],
+            situation="facing_raise", preflop_pressure="medium",
+            card1="Qs", card2="Qh",
+        )
+        self.assertEqual(premium["action"], "RAISE")
+        self.assertEqual(premium["raise_to_bb"], 5)
+
+    def test_spin_transitions_to_heads_up_engine(self):
+        button = review(
+            mode="spin", player_count=2, position="BTN/SB", stack_bb=10,
+            opponent_stacks_bb=[10],
+            card1="As", card2="4h",
+        )
+        self.assertEqual(button["spin_phase"], "heads_up")
+        self.assertEqual(button["action"], "ALL-IN")
+
+        bb = review(
+            mode="spin", player_count=2, position="BB", stack_bb=10,
+            opponent_stacks_bb=[10],
+            situation="facing_raise", preflop_pressure="allin",
+            card1="As", card2="2s",
+        )
+        self.assertEqual(bb["action"], "CALL")
+
+    def test_spin_rejects_non_spin_table_sizes_without_guessing(self):
+        result = review(
+            mode="spin", player_count=4, position="BTN", stack_bb=20,
+            card1="As", card2="Kh",
+        )
+        self.assertEqual(result["action"], "SEM COBERTURA")
+        self.assertIn("3-handed", " ".join(result["notes"]))
+
+    def test_spin_postflop_keeps_specialized_context(self):
+        result = review(
+            mode="spin", player_count=2, position="BTN/SB", stack_bb=20,
+            opponent_stacks_bb=[18],
+            card1="As", card2="Qh", street="flop",
+            flop1="Ah", flop2="7d", flop3="2c",
+            pot_bb=4, call_bb=0,
+        )
+        self.assertTrue(result["profile"].startswith("Spin & Go"))
+        self.assertEqual(result["strategy_status"], "spin_postflop_heuristic")
+        self.assertEqual(result["effective_stack_bb"], 18)
+
     def test_turn_and_river_require_board(self):
         r = review(
             card1="As", card2="Qh", street="turn",
