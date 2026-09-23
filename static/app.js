@@ -370,6 +370,20 @@ function mapPointsToLayout(points,count){
 
 function renderVisionPlayerDetails(){ return; }
 
+function stackReadingIsStable(obs){
+  if(!obs || !Number.isFinite(Number(obs.stack_bb))) return false;
+  if(!obs.stale && obs.data_state!=='stale') return true;
+  const age=Number(obs.last_seen_age||0);
+  // PokerStars dims/flashes a player's plaque while action is on them.
+  // Short OCR misses must not turn a reliable seat yellow.
+  return Number.isFinite(age) && age<=6;
+}
+
+function stackReadingIsOld(obs){
+  if(!obs || !Number.isFinite(Number(obs.stack_bb))) return false;
+  return !stackReadingIsStable(obs);
+}
+
 function renderVisionHealthOverlay(){
   const layer=$('#visionSeatHealth');
   if(!layer) return;
@@ -388,7 +402,12 @@ function renderVisionHealthOverlay(){
     const hasStack=i===0
       ? Number.isFinite(heroStack) && heroStack>0
       : obs && Number.isFinite(Number(obs.stack_bb));
-    const stale=i===0 ? false : (Boolean(obs?.stale)||obs?.data_state==='stale');
+    const stableStack=i===0
+      ? hasStack
+      : stackReadingIsStable(obs);
+    const oldStack=i===0
+      ? false
+      : stackReadingIsOld(obs);
 
     let health='partial';
     let title='Stack ainda não lido';
@@ -398,13 +417,13 @@ function renderVisionHealthOverlay(){
     }else if(tableError){
       health='error';
       title='Erro na leitura da mesa';
-    }else if(hasStack && !stale){
+    }else if(hasStack && stableStack){
       health='ok';
       const shownStack=i===0?heroStack:Number(obs?.stack_bb);
       title=`Stack ${formatBB(shownStack)} BB`;
-    }else if(hasStack){
+    }else if(hasStack && oldStack){
       const shownStack=i===0?heroStack:Number(obs?.stack_bb);
-      title=`Stack ${formatBB(shownStack)} BB · última leitura conhecida`;
+      title=`Stack ${formatBB(shownStack)} BB · leitura antiga`;
     }
 
     dot.className=`vision-seat-dot ${health}`;
@@ -451,7 +470,7 @@ function renderTable(){
     if(i===0 && Number.isFinite(heroStack) && heroStack>0){
       stackText=`<span class="seat-stack">${formatBB(heroStack)} BB</span>`;
     }else if(!isInactive && i!==0 && stackObs && Number.isFinite(Number(stackObs.stack_bb))){
-      stackText=`<span class="seat-stack${stackObs.stale?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`;
+      stackText=`<span class="seat-stack${stackReadingIsOld(stackObs)?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`;
     }
 
     const seatLabel=isInactive?'AUSENTE':(pos||'—');
@@ -1139,7 +1158,7 @@ function applyVisionPlayerAutomation(state){
     player.seat!==0
     && player.status!=='inactive'
     && Number.isFinite(Number(player.stack_bb))
-    && (!player.stale || Number(player.last_seen_age||0)<=4)
+    && stackReadingIsStable(player)
   );
   const stacks=players.map(player=>Number(player.stack_bb)).filter(value=>value>0);
   state.opponent_stacks_bb=stacks;
