@@ -132,6 +132,24 @@ def normalized_points(value: object) -> list[list[float]]:
     return clean
 
 
+def normalized_seat_indices(value: object) -> list[int]:
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list) or len(value) > 10:
+        raise ValueError("Índices de assentos inválidos.")
+    clean = []
+    for item in value:
+        try:
+            seat = int(item)
+        except (TypeError, ValueError):
+            raise ValueError("Índice de assento inválido.")
+        if not 0 <= seat <= 9:
+            raise ValueError("Índice de assento inválido.")
+        if seat not in clean:
+            clean.append(seat)
+    return clean
+
+
 def normalized_seat_observations(value: object) -> list[dict]:
     if value in (None, ""):
         return []
@@ -287,6 +305,9 @@ def normalize_vision_payload(data: dict) -> dict:
         ),
         "table_scan_at": optional_nonnegative_number(data.get("table_scan_at")),
         "inactive_points": normalized_points(data.get("inactive_points", [])),
+        "inactive_seat_indices": normalized_seat_indices(
+            data.get("inactive_seat_indices", [])
+        ),
         "seat_observations": normalized_seat_observations(
             data.get("seat_observations", [])
         ),
