@@ -147,7 +147,7 @@ def normalized_seat_observations(value: object) -> list[dict]:
             raise ValueError("Coordenada de assento inválida.")
         stack = optional_nonnegative_number(item.get("stack_bb"))
         status = str(item.get("status", "active"))
-        if status not in {"active", "inactive", "disconnected"}:
+        if status not in {"active", "inactive", "disconnected", "folded"}:
             status = "active"
         action = str(item.get("action", "unknown")).upper()
         if action not in {"UNKNOWN", "FOLD", "CHECK", "CALL", "BET", "RAISE", "ALL-IN"}:
@@ -162,6 +162,7 @@ def normalized_seat_observations(value: object) -> list[dict]:
             "stack_bb": stack,
             "bet_bb": optional_nonnegative_number(item.get("bet_bb")),
             "action": action,
+            "action_at": optional_nonnegative_number(item.get("action_at")),
             "status": status,
             "stale": bool(item.get("stale", False)),
             "last_seen_age": optional_nonnegative_number(item.get("last_seen_age")),
