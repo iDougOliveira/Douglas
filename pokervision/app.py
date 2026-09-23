@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.10.0"
+APP_VERSION = "0.11.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -754,7 +754,7 @@ class PokerVisionApp:
         self.table_readout.pack(anchor="w", pady=(5, 0))
         self.players_readout = ttk.Label(
             coords,
-            text="ASSENTOS: aguardando leitura de nome/stack/aposta/ação",
+            text="STACKS DA MESA: aguardando leitura",
             style="Muted.TLabel",
             wraplength=960,
             justify="left",
@@ -1081,14 +1081,23 @@ class PokerVisionApp:
     def _round_value(value):
         return None if value is None else round(float(value), 4)
 
-    @staticmethod
-    def _player_key(obs: dict) -> str:
-        name = str(obs.get("name", "")).strip().casefold()
-        if name:
-            return "name:" + name
-        x = round(float(obs.get("x", 0)), 1)
-        y = round(float(obs.get("y", 0)), 1)
-        return f"pos:{x:.1f}:{y:.1f}"
+    def _player_key(self, obs: dict) -> str:
+        x = float(obs.get("x", 0))
+        y = float(obs.get("y", 0))
+        best_key = None
+        best_distance = 1e9
+        for key, memory in self.player_memory.items():
+            if "x" not in memory or "y" not in memory:
+                continue
+            dx = x - float(memory["x"])
+            dy = y - float(memory["y"])
+            distance = (dx * dx) + (dy * dy)
+            if distance < best_distance:
+                best_distance = distance
+                best_key = key
+        if best_key is not None and best_distance <= (0.085 * 0.085):
+            return best_key
+        return f"seat:{x:.3f}:{y:.3f}"
 
     def _current_round_key(self) -> tuple:
         state = _bridge_snapshot()
@@ -1226,11 +1235,7 @@ class PokerVisionApp:
                 "last_seen_age": 0.0,
                 "raw": str(obs.get("raw", ""))[:80],
             }
-            complete = bool(
-                result["name"]
-                and result["stack_bb"] is not None
-                and action != "UNKNOWN"
-            )
+            complete = result["stack_bb"] is not None
             result["data_state"] = "complete" if complete else "partial"
             enriched.append(result)
 
@@ -1370,25 +1375,18 @@ class PokerVisionApp:
             )
         )
         live_players = [p for p in players if not p.get("stale")]
-        complete = sum(p.get("data_state") == "complete" for p in live_players)
-        parts = []
-        for player in live_players[:8]:
-            name = player.get("name") or "?"
-            stack = player.get("stack_bb")
-            bet = player.get("bet_bb")
-            action = player.get("action", "UNKNOWN")
-            item = name
-            if stack is not None:
-                item += f" {stack:g}BB"
-            if bet is not None:
-                item += f" bet={bet:g}"
-            if action != "UNKNOWN":
-                item += f" {action}"
-            parts.append(item)
+        stacks = [
+            float(p["stack_bb"])
+            for p in live_players
+            if p.get("stack_bb") is not None
+        ]
         self.players_readout.configure(
             text=(
-                f"ASSENTOS: {complete}/{len(live_players)} completos · "
-                + (" | ".join(parts) if parts else "nenhum jogador individual confirmado")
+                f"STACKS DA MESA: {len(stacks)}/{max(0, count - 1)} adversários lidos"
+                + (
+                    " · " + " | ".join(f"{value:g} BB" for value in stacks[:8])
+                    if stacks else ""
+                )
             )
         )
         _bridge_publish_table({
@@ -1416,6 +1414,36 @@ class PokerVisionApp:
                 "PLAYERS %s",
                 json.dumps(players, ensure_ascii=False, separators=(",", ":")),
             )
+
+    @staticmethod
+    def _repair_factor_ten(previous, current):
+        if previous is None or current is None:
+            return current
+        previous = float(previous)
+        current = float(current)
+        if previous <= 0 or current <= 0:
+            return current
+
+        for candidate in (current / 10.0, current * 10.0):
+            if abs(candidate - previous) / previous <= 0.08:
+                return round(candidate, 4)
+        return current
+
+    def _sanitize_numeric_result(self, data: dict) -> dict:
+        clean = dict(data)
+        previous = _bridge_snapshot().get("hero_stack_bb")
+        current = clean.get("hero_stack_bb")
+        repaired = self._repair_factor_ten(previous, current)
+        if current is not None and repaired != current:
+            LOGGER.warning(
+                "NUMERIC repaired factor10 hero_stack raw=%s previous=%s repaired=%s text=%r",
+                current,
+                previous,
+                repaired,
+                clean.get("hero_text", ""),
+            )
+            clean["hero_stack_bb"] = repaired
+        return clean
 
     def _numeric_signature(self, data: dict) -> tuple:
         return (
@@ -1485,6 +1513,7 @@ class PokerVisionApp:
             data = dict(self.numeric_result) if self.numeric_result else None
         if not data:
             return
+        data = self._sanitize_numeric_result(data)
         if data.get("error"):
             self.numeric_readout.configure(
                 text=f"OCR NUMÉRICO: {data['error']}"
