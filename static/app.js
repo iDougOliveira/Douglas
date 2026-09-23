@@ -58,6 +58,9 @@ let visionTableState='disabled';
 let visionInactivePoints=[];
 let visionSeatObservations=[];
 let visionLastState=null;
+let visionPlayerAutoEnabled=true;
+let visionManualOverrideKey='';
+let visionAutoLastSignature='';
 let lastStreet='preflop';
 const VISION_URL='/api/vision/state';
 
@@ -448,6 +451,7 @@ function renderTable(){
       dealerSeat=i;
       invalidateReview();
       renderTable();
+      if(visionLastState) applyVisionPlayerAutomation(visionLastState);
       scheduleAnalysis();
     };
     seats.appendChild(b);
@@ -593,7 +597,8 @@ $$('.choice').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.pre-action').forEach(b=>b.onclick=()=>{
+$('.pre-action').forEach(b=>b.onclick=()=>{
+  markVisionManualOverride();
   const f=$('#reviewForm').elements;
   const same=f.situation.value===b.dataset.value;
   $$('.pre-action').forEach(x=>x.classList.remove('active'));
@@ -616,7 +621,8 @@ $$('.pre-action').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
+$('.pre-pressure-choice').forEach(b=>b.onclick=()=>{
+  markVisionManualOverride();
   const f=$('#reviewForm').elements;
   $$('.pre-pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
@@ -647,7 +653,8 @@ function resetPreflopAction(){
   if($('#preflopPressure')) $('#preflopPressure').hidden=true;
 }
 
-$$('.post-state').forEach(b=>b.onclick=()=>{
+$('.post-state').forEach(b=>b.onclick=()=>{
+  markVisionManualOverride();
   const f=$('#reviewForm').elements;
   $$('.post-state').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
@@ -665,7 +672,8 @@ $$('.post-state').forEach(b=>b.onclick=()=>{
   scheduleAnalysis();
 });
 
-$$('.pressure-choice').forEach(b=>b.onclick=()=>{
+$('.pressure-choice').forEach(b=>b.onclick=()=>{
+  markVisionManualOverride();
   const f=$('#reviewForm').elements;
   $$('.pressure-choice').forEach(x=>x.classList.remove('active'));
   b.classList.add('active');
@@ -708,6 +716,10 @@ function updateStreet(){
   else if(n===4) street='turn';
   else if(n===5) street='river';
   if(street!==lastStreet){
+    visionManualOverrideKey='';
+    visionAutoLastSignature='';
+    if(f.effective_stack_bb) f.effective_stack_bb.value='';
+    if(f.auto_player_action) f.auto_player_action.value='0';
     if(street==='preflop'){
       resetPostAction();
     }else{
@@ -952,6 +964,274 @@ function applyVisionNumericState(state){
   }
 }
 
+function currentVisionStreetKey(){
+  const f=$('#reviewForm')?.elements;
+  if(!f) return '';
+  return [
+    f.card1?.value||'',
+    f.card2?.value||'',
+    f.street?.value||'preflop',
+    ...boardFields.map(key=>f[key]?.value||'')
+  ].join('|');
+}
+
+function markVisionManualOverride(){
+  visionManualOverrideKey=currentVisionStreetKey();
+  const status=$('#playerAutoStatus');
+  if(status) status.textContent='Ações dos jogadores: override manual nesta rua.';
+}
+
+function setVisionPlayerAutoEnabled(enabled){
+  visionPlayerAutoEnabled=Boolean(enabled);
+  const button=$('#playerAutoToggle');
+  if(button) button.textContent=visionPlayerAutoEnabled?'Jogadores AUTO ON':'Jogadores AUTO OFF';
+  try{localStorage.setItem('pokercoach.playerAutoEnabled',visionPlayerAutoEnabled?'1':'0')}catch(e){}
+  const status=$('#playerAutoStatus');
+  if(status && !visionPlayerAutoEnabled){
+    status.textContent='Ações dos jogadores: automático pausado · controles manuais ativos.';
+  }
+}
+
+function mappedVisionPlayers(){
+  if(!positionOrder?.[playerCount]) return [];
+  const mapped=mapObservationsToCurrentSeats(visionSeatObservations,playerCount);
+  const players=[];
+  mapped.forEach((obs,seat)=>{
+    const offset=(seat-dealerSeat+playerCount)%playerCount;
+    const position=positionOrder[playerCount][offset]||'';
+    players.push({...obs,seat,position});
+  });
+  return players;
+}
+
+function visionPlayerUsable(player,maxStale=4){
+  if(!player) return false;
+  if(player.status==='inactive') return false;
+  if(player.status==='disconnected') return false;
+  if(player.stale && Number(player.last_seen_age||999)>maxStale) return false;
+  return true;
+}
+
+function normalizedPlayerEvents(players){
+  const events=[];
+  players.forEach(player=>{
+    if(!visionPlayerUsable(player,4)) return;
+    const history=Array.isArray(player.action_history)?player.action_history:[];
+    if(history.length){
+      history.forEach(event=>{
+        const action=String(event?.action||'UNKNOWN').toUpperCase();
+        if(action==='UNKNOWN') return;
+        events.push({
+          action,
+          bet_bb:event?.bet_bb==null?null:Number(event.bet_bb),
+          at:Number(event?.at||0),
+          player
+        });
+      });
+    }else{
+      const action=String(player.action||'UNKNOWN').toUpperCase();
+      if(action!=='UNKNOWN'){
+        events.push({
+          action,
+          bet_bb:player.bet_bb==null?null:Number(player.bet_bb),
+          at:Number(player.action_at||0),
+          player
+        });
+      }
+    }
+  });
+  events.sort((a,b)=>{
+    const ta=Number(a.at||0), tb=Number(b.at||0);
+    if(ta!==tb) return ta-tb;
+    return Number(a.bet_bb||0)-Number(b.bet_bb||0);
+  });
+  return events;
+}
+
+function playerEffectiveStack(player,heroStack){
+  if(!player) return null;
+  const remaining=Number(player.stack_bb);
+  const bet=Number(player.bet_bb);
+  let total=Number.isFinite(remaining)&&remaining>=0?remaining:null;
+  if(total!=null && Number.isFinite(bet)&&bet>0 && String(player.action||'').toUpperCase()!=='ALL-IN'){
+    total+=bet;
+  }
+  if(total==null || total<=0) return null;
+  return Math.min(Math.max(0,Number(heroStack)||0),total);
+}
+
+function classifyPreflopPressure(amount,action){
+  if(String(action).toUpperCase()==='ALL-IN') return 'allin';
+  const value=Number(amount);
+  if(!Number.isFinite(value)||value<=0) return 'none';
+  if(value<=2.5) return 'low';
+  if(value<=4) return 'medium';
+  return 'high';
+}
+
+function classifyPostflopPressure(amount,pot,action){
+  if(String(action).toUpperCase()==='ALL-IN') return 'allin';
+  const bet=Number(amount), currentPot=Number(pot);
+  if(!Number.isFinite(bet)||bet<=0||!Number.isFinite(currentPot)||currentPot<=0) return 'none';
+  const before=Math.max(0.1,currentPot>bet?currentPot-bet:currentPot);
+  const ratio=bet/before;
+  if(ratio<=0.42) return 'low';
+  if(ratio<=0.72) return 'medium';
+  return 'high';
+}
+
+function setAutomaticPreflopUI(situation,pressure){
+  const f=$('#reviewForm').elements;
+  f.situation.value=situation;
+  f.preflop_pressure.value=pressure||'none';
+  $('.pre-action').forEach(button=>{
+    button.classList.toggle('active',button.dataset.value===situation);
+  });
+  $('.pre-pressure-choice').forEach(button=>{
+    button.classList.toggle('active',button.dataset.value===pressure);
+  });
+  syncContext();
+}
+
+function setAutomaticPostflopUI(pressure){
+  const f=$('#reviewForm').elements;
+  f.post_action.value='facing_bet';
+  f.bet_pressure.value=pressure;
+  $('.post-state').forEach(button=>{
+    button.classList.toggle('active',button.dataset.value==='facing_bet');
+  });
+  $('.pressure-choice').forEach(button=>{
+    button.classList.toggle('active',button.dataset.value===pressure);
+  });
+  if($('#betPressure')) $('#betPressure').hidden=false;
+}
+
+function applyVisionPlayerAutomation(state){
+  const f=$('#reviewForm')?.elements;
+  const status=$('#playerAutoStatus');
+  if(!f) return;
+
+  f.auto_player_action.value='0';
+  if(!visionEnabled || !visionPlayerAutoEnabled){
+    f.effective_stack_bb.value='';
+    return;
+  }
+  if(visionTableState!=='confirmed'){
+    if(status) status.textContent='Ações dos jogadores: leitura parcial · modo manual preservado.';
+    return;
+  }
+
+  const key=currentVisionStreetKey();
+  if(visionManualOverrideKey && visionManualOverrideKey===key){
+    if(status) status.textContent='Ações dos jogadores: override manual nesta rua.';
+    return;
+  }
+
+  const players=mappedVisionPlayers();
+  const hero=players.find(player=>player.seat===0);
+  const opponents=players.filter(player=>player.seat!==0);
+  const events=normalizedPlayerEvents(opponents);
+  const heroStack=Math.max(0,Number(f.stack_bb.value)||0);
+  const folded=opponents.filter(player=>player.status==='folded').length;
+  f.active_opponents.value=String(Math.max(1,playerCount-1-folded));
+
+  const street=f.street.value||'preflop';
+  let applied=false;
+  let summary='';
+
+  if(street==='preflop'){
+    const raises=events.filter(event=>['RAISE','ALL-IN'].includes(event.action));
+    const calls=events.filter(event=>event.action==='CALL');
+
+    if(raises.length){
+      const lastRaise=raises[raises.length-1];
+      const firstRaise=raises[0];
+      const raiseCount=raises.length;
+      const situation=raiseCount>=3?'facing_4bet':raiseCount>=2?'facing_3bet':'facing_raise';
+      const amount=lastRaise.bet_bb!=null
+        ? Number(lastRaise.bet_bb)
+        : Number(lastRaise.player?.bet_bb);
+      const pressure=classifyPreflopPressure(amount,lastRaise.action);
+
+      // A normal raise without a readable amount stays manual. ALL-IN is
+      // unambiguous even when PokerStars replaces the stack number by text.
+      if(pressure!=='none'){
+        setAutomaticPreflopUI(situation,pressure);
+        if(Number.isFinite(amount)&&amount>0) f.open_to_bb.value=String(amount);
+        f.callers.value=String(calls.length);
+        f.opener_position.value=firstRaise.player?.position||'';
+        const effective=playerEffectiveStack(lastRaise.player,heroStack);
+        f.effective_stack_bb.value=effective!=null?String(effective):'';
+        f.auto_player_action.value='1';
+        applied=true;
+        summary=`AUTO: ${lastRaise.player?.name||lastRaise.player?.position||'adversário'} · ${actionLabel(lastRaise.action)}${Number.isFinite(amount)&&amount>0?' '+formatBB(amount)+' BB':''}`;
+      }
+    }else if(calls.length){
+      const lastCall=calls[calls.length-1];
+      setAutomaticPreflopUI('limped','none');
+      f.callers.value=String(calls.length);
+      const effective=playerEffectiveStack(lastCall.player,heroStack);
+      f.effective_stack_bb.value=effective!=null?String(effective):'';
+      f.auto_player_action.value='1';
+      applied=true;
+      summary=`AUTO: ${calls.length} limp/call detectado(s)`;
+    }
+  }else{
+    const aggressive=events.filter(event=>['BET','RAISE','ALL-IN'].includes(event.action));
+    if(aggressive.length){
+      const last=aggressive[aggressive.length-1];
+      const amount=last.bet_bb!=null?Number(last.bet_bb):Number(last.player?.bet_bb);
+      let call=null;
+      const heroBet=hero?.bet_bb==null?0:Number(hero.bet_bb);
+      const effective=playerEffectiveStack(last.player,heroStack);
+
+      if(Number.isFinite(amount)&&amount>0){
+        call=Math.max(0,amount-(Number.isFinite(heroBet)?heroBet:0));
+      }else if(last.action==='ALL-IN' && effective!=null){
+        call=Math.min(heroStack,effective);
+      }
+
+      const pressure=classifyPostflopPressure(amount,Number(f.pot_bb.value||0),last.action);
+      if(pressure!=='none' && call!=null && call>=0){
+        setAutomaticPostflopUI(pressure);
+        f.call_bb.value=String(Math.min(heroStack,call));
+        f.effective_stack_bb.value=effective!=null?String(effective):'';
+        f.auto_player_action.value='1';
+        applied=true;
+        summary=`AUTO: ${last.player?.name||last.player?.position||'adversário'} · ${actionLabel(last.action)} · pagar ${formatBB(Math.min(heroStack,call))} BB`;
+      }
+    }
+  }
+
+  if(!applied){
+    f.effective_stack_bb.value='';
+    if(status){
+      status.textContent='Ações dos jogadores: sem ação confiável para aplicar · controles manuais continuam ativos.';
+    }
+    return;
+  }
+
+  const signature=JSON.stringify([
+    street,
+    f.situation?.value,
+    f.preflop_pressure?.value,
+    f.post_action?.value,
+    f.bet_pressure?.value,
+    f.call_bb?.value,
+    f.effective_stack_bb?.value,
+    f.active_opponents?.value,
+    summary
+  ]);
+  if(signature!==visionAutoLastSignature){
+    visionAutoLastSignature=signature;
+    invalidateReview('PokerVision: ação dos jogadores atualizada');
+    updatePressureLabels();
+    syncContext();
+    scheduleAnalysis();
+  }
+  if(status) status.textContent=summary+' · fallback manual disponível.';
+}
+
 function applyVisionTableState(state){
   if(!visionEnabled || !state?.running) return;
 
@@ -1001,6 +1281,7 @@ function applyVisionTableState(state){
   }
 
   renderVisionHealthOverlay();
+  applyVisionPlayerAutomation(state);
 }
 
 function applyPendingPlayerCountForNewHand(){
@@ -1048,6 +1329,8 @@ function applyVisionState(state){
   if(board.length===0 && incomingHand && incomingHand!==previousHand){
     resetPreflopAction();
     resetPostAction();
+    visionManualOverrideKey='';
+    visionAutoLastSignature='';
     lastStreet='preflop';
     applyPendingPlayerCountForNewHand();
   }
@@ -1130,13 +1413,24 @@ function initPokerVision(){
   try{
     const saved=localStorage.getItem('pokercoach.visionEnabled');
     if(saved!==null) visionEnabled=saved!=='0';
+    const playerSaved=localStorage.getItem('pokercoach.playerAutoEnabled');
+    if(playerSaved!==null) visionPlayerAutoEnabled=playerSaved!=='0';
   }catch(e){}
   setVisionEnabled(visionEnabled);
+  setVisionPlayerAutoEnabled(visionPlayerAutoEnabled);
   $('#visionToggle').onclick=()=>{
     setVisionEnabled(!visionEnabled);
     if(visionEnabled){
       visionLastSignature='';
       pollPokerVision();
+    }
+  };
+  if($('#playerAutoToggle')) $('#playerAutoToggle').onclick=()=>{
+    setVisionPlayerAutoEnabled(!visionPlayerAutoEnabled);
+    visionManualOverrideKey='';
+    visionAutoLastSignature='';
+    if(visionPlayerAutoEnabled && visionLastState){
+      applyVisionPlayerAutomation(visionLastState);
     }
   };
   pollPokerVision();
@@ -1167,8 +1461,12 @@ function buildPayload(){
   data.icm_pressure=false;
   data.quick_preflop=true;
   data.preflop_pressure=f.preflop_pressure?.value||'none';
-  data.call_bb=0;
+  data.call_bb=f.post_action?.value==='facing_bet'
+    ? Number(f.call_bb?.value||0)
+    : 0;
   data.bet_pressure=f.post_action?.value==='facing_bet'?(f.bet_pressure.value||'none'):'none';
+  data.effective_stack_bb=f.effective_stack_bb?.value||'';
+  data.auto_player_action=f.auto_player_action?.value==='1';
   data.record_review=false;
   return data;
 }
