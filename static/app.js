@@ -283,19 +283,34 @@ function activePhysicalSeats(){
   return seats;
 }
 
+function enginePlayerCountForButton(){
+  const active=activePhysicalSeats();
+  const deadButton=!active.includes(dealerSeat);
+  if(deadButton && playerCount<physicalSeatCount() && positionOrder[playerCount+1]){
+    return playerCount+1;
+  }
+  return playerCount;
+}
+
 function physicalPositionMap(){
   const map=new Map();
   const active=activePhysicalSeats();
-  const positions=positionOrder[playerCount]||[];
-  if(!positions.length || active.length!==playerCount || !active.includes(dealerSeat)){
-    return map;
+  if(active.length!==playerCount) return map;
+
+  const count=physicalSeatCount();
+  const deadButton=!active.includes(dealerSeat);
+  const engineCount=enginePlayerCountForButton();
+  let positions=positionOrder[engineCount]||[];
+  if(deadButton){
+    positions=positions.filter(position=>position!=='BTN' && position!=='BTN/SB');
   }
+  if(!positions.length || positions.length!==active.length) return map;
 
   const ordered=[];
-  const count=physicalSeatCount();
-  for(let step=0;step<count;step++){
+  const firstStep=deadButton?1:0;
+  for(let step=firstStep;step<count+firstStep;step++){
     const seat=(dealerSeat+step)%count;
-    if(active.includes(seat)) ordered.push(seat);
+    if(active.includes(seat) && !ordered.includes(seat)) ordered.push(seat);
   }
   ordered.forEach((seat,index)=>{
     if(positions[index]) map.set(seat,positions[index]);
@@ -478,16 +493,12 @@ function renderTable(){
     b.setAttribute(
       'aria-label',
       isInactive
-        ? `Assento ${i+1}, ausente ou vazio`
+        ? `Assento ${i+1}, ausente ou vazio. Clique se o botão real estiver neste lugar`
         : `${i===0?'Você':`Assento ${i+1}`}, ${pos||'posição aguardando'}. Colocar botão aqui`
     );
     b.setAttribute('aria-pressed',String(i===dealerSeat));
 
     b.onclick=()=>{
-      if(isInactive){
-        $('#tableHint').textContent='Esse lugar está ausente/vazio. Clique no jogador que realmente está com o botão.';
-        return;
-      }
       dealerSeat=i;
       invalidateReview();
       renderTable();
@@ -509,11 +520,15 @@ function renderTable(){
     $('#reviewForm').elements.position.value='';
   }
 
-  $('#reviewForm').elements.player_count.value=playerCount;
   const activeSeats=activePhysicalSeats();
-  const reliable=activeSeats.length===playerCount && activeSeats.includes(dealerSeat);
+  const deadButton=!activeSeats.includes(dealerSeat);
+  const engineCount=enginePlayerCountForButton();
+  $('#reviewForm').elements.player_count.value=engineCount;
+  const reliable=activeSeats.length===playerCount && positions.size===activeSeats.length;
   $('#tableHint').textContent=reliable
-    ? `Mesa física de ${physicalCount} lugares · ${playerCount} jogadores ativos. Clique no mesmo jogador que está com o botão na mesa real.`
+    ? deadButton
+      ? `Botão em assento ausente · posições calculadas como botão morto · ${playerCount} jogadores ativos.`
+      : `Mesa física de ${physicalCount} lugares · ${playerCount} jogadores ativos. Clique no mesmo lugar do botão real.`
     : `Aguardando mapear os assentos ativos (${activeSeats.length}/${playerCount}). Os lugares físicos permanecem fixos.`;
 
   const playerSelect=$('#playerCountSelect');
