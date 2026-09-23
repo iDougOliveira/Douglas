@@ -53,7 +53,7 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(result["action"], "RAISE")
         self.assertEqual(result["hand"], "AKo")
         self.assertEqual(result["raise_to_bb"], 2.5)
-        self.assertEqual(result["engine_version"], "3.9.0")
+        self.assertEqual(result["engine_version"], "3.10.0")
         self.assertTrue(self.call("/api/session", {
             "played_at": "2026-09-21", "mode": "cash", "stakes": "NL10",
             "buy_in": 10, "cash_out": 13.5, "notes": "teste",
@@ -169,6 +169,7 @@ class VisionNumericRelayTests(unittest.TestCase):
         self.assertIsNone(state["seat_observations"][0]["bet_bb"])
         self.assertEqual(state["seat_observations"][0]["action"], "UNKNOWN")
         self.assertEqual(state["seat_observations"][0]["data_state"], "partial")
+        self.assertEqual(state["seat_observations"][0]["action_history"], [])
 
         with self.assertRaises(ValueError):
             app.normalize_vision_payload({
