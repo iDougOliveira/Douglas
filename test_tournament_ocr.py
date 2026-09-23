@@ -1,6 +1,9 @@
+import sys
 import unittest
+from pathlib import Path
 
-from pokervision import tournament_ocr
+sys.path.insert(0, str(Path(__file__).resolve().parent / "pokervision"))
+import tournament_ocr
 
 
 class TournamentHudTests(unittest.TestCase):
