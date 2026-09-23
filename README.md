@@ -4,11 +4,12 @@ Painel web local para estudo/revisão de mãos e gestão de banca. Funciona no n
 
 Interface visual: escolha de 2 a 10 jogadores, clique no assento com o botão e selecione as duas cartas no baralho gráfico. Em heads-up, o botão também é SB.
 
-## Motor 3.0.0
+## Motor 3.17.0
 
 O módulo `strategy.py` substitui integralmente as heurísticas antigas. Cada resultado informa perfil, fonte, motivo e limites; o histórico registra a entrada usada. Não existe LLM nem sorteio de ação.
 
-- Aberturas: resumos escritos da [PokerCoaching](https://pokercoaching.com/preflop-charts/), separados por mesa, posição e stack. Cash 6-max/100 BB; cash 8-max (referência adaptada, limitada pelo app a 100 BB); torneio 9-max/75 ou 100 BB; torneio 8-max/10 BB.
+- Spin & Go: motor próprio 3-handed → heads-up, dirigido por stack efetivo em BB. Usa resumos textuais públicos do [curso Spin & Go da PokerStars Learn](https://www.pokerstars.com/poker/learn/course/spin-go-strategy-pokerstars-tips/) para BTN/SB/BB, limps, reshoves, defesa de blind e HU. Frequências que só aparecem nos charts/imagens não são inventadas; ficam como cobertura parcial.
+- Aberturas gerais: resumos escritos da [PokerCoaching](https://pokercoaching.com/preflop-charts/), separados por mesa, posição e stack. Cash 6-max/100 BB; cash 8-max (referência adaptada, limitada pelo app a 100 BB); torneio 9-max/75 ou 100 BB; torneio 8-max/10 BB.
 - Cash 8-max: o texto não especifica stack nem rake. A limitação a 100 BB é uma decisão de implementação, não validação GTO. O tamanho de abertura de 3 BB está na [imagem pública full-ring](https://cdn-pokercoachin.pressidium.com/wp-content/uploads/2026/06/65097636-0-preflop-ranges-for-f.jpg).
 - Não são reproduzidas frequências de solver. A fonte tem diferenças entre listas textuais e imagens de ações mistas; o motor identifica explicitamente a consulta como resumo. Grupos sem ação individual discriminada, como SB, permanecem MISTA.
 - 3-bet: [diretriz Upswing](https://upswingpoker.com/3-bet-strategy-aggressive-preflop/), núcleo QQ+/AK, cash 100 BB sem ante. O app restringe a um open de 2–5 BB sem callers; 3× em posição, 4× fora. Essas são simplificações de especialista, não tabelas completas contra cada posição. Fora do núcleo, não deduz fold.
@@ -20,13 +21,13 @@ Conceitos conferidos também no [GTO Wizard](https://blog.gtowizard.com/how-stac
 
 Use “Carregar exemplo de estudo” para explorar perfis; ao revisar uma mão, preserve os dados reais. “REVISAR” indica falta de cobertura, não fold. A banca total é separada do stack efetivo.
 
-Validação local: `python3 -m unittest -v test_app test_strategy` e `node --check static/app.js`. Os testes conferem exemplos de referência, regras de sizing, 169 classes de mãos por posição/perfil e regressão do erro de 7,5 BB. Não são prova de lucratividade ou de equilíbrio GTO.
+Validação local: `python3 -m unittest -v test_app test_strategy` e `node --check static/app.js`. Os testes incluem transição Spin 3-handed → heads-up, stacks efetivos assimétricos, ranges por profundidade e regressões existentes. Não são prova de lucratividade ou de equilíbrio GTO.
 
 Código oficial: `https://github.com/iDougOliveira/Douglas`
 
 ## Escopo e conformidade
 
-- Não captura tela, não lê cliente de poker, não controla mouse e não executa apostas.
+- O PokerVision pode ler regiões locais da tela para cartas/stacks/mesa; não clica, não controla mouse e não executa apostas.
 - O analisador exige confirmação de que a mão terminou ou é uma simulação.
 - Não use as recomendações durante partidas comerciais. Consulte as regras da sala.
 - Os ranges são educacionais e simplificados, não uma solução GTO.
@@ -73,6 +74,12 @@ A atualização preserva a senha e o banco de dados existente.
 ## Atualização automática via GitHub
 
 Depois da migração inicial, o timer `pokercoach-update.timer` consulta o GitHub a cada cinco minutos. Uma versão nova só entra em operação após validação; se o health check falhar, o código anterior é restaurado.
+
+Para buscar imediatamente a versão mais nova no Beelink:
+
+```bash
+sudo bash /home/douglas/PokerCoach/auto_update.sh
+```
 
 Comandos de auditoria:
 
