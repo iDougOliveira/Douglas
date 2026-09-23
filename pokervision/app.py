@@ -23,9 +23,10 @@ from PIL import Image, ImageTk
 from recognizer import card_text, recognize_board, recognize_hand, street_from_board
 from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import SEAT_LAYOUTS, analyze_table, infer_player_count
+from tournament_ocr import analyze_tournament_hud
 
 
-APP_VERSION = "0.11.3"
+APP_VERSION = "0.12.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -54,6 +55,16 @@ _BRIDGE_STATE = {
     "inactive_points": [],
     "inactive_seat_indices": [],
     "seat_observations": [],
+    "tournament_hud_enabled": False,
+    "tournament_hud_state": "disabled",
+    "tournament_hud_at": 0.0,
+    "tournament_rank": None,
+    "tournament_remaining": None,
+    "tournament_avg_stack_bb": None,
+    "tournament_small_blind": None,
+    "tournament_big_blind": None,
+    "tournament_ante": None,
+    "tournament_level_seconds": None,
     "updated_at": 0.0,
 }
 
@@ -132,6 +143,26 @@ def _bridge_publish_table(data: dict) -> None:
         "inactive_points",
         "inactive_seat_indices",
         "seat_observations",
+    }
+    with _BRIDGE_LOCK:
+        for key, value in data.items():
+            if key in allowed:
+                _BRIDGE_STATE[key] = value
+        _BRIDGE_STATE["updated_at"] = time.time()
+
+
+def _bridge_publish_tournament(data: dict) -> None:
+    allowed = {
+        "tournament_hud_enabled",
+        "tournament_hud_state",
+        "tournament_hud_at",
+        "tournament_rank",
+        "tournament_remaining",
+        "tournament_avg_stack_bb",
+        "tournament_small_blind",
+        "tournament_big_blind",
+        "tournament_ante",
+        "tournament_level_seconds",
     }
     with _BRIDGE_LOCK:
         for key, value in data.items():
@@ -403,6 +434,7 @@ CALIBRATION_KEYS = (
     "hero_stack",
     "pot",
     "table",
+    "tournament_hud",
 )
 
 
@@ -410,6 +442,7 @@ def load_config() -> dict:
     path = config_path()
     empty = {key: None for key in CALIBRATION_KEYS}
     empty["table_max_seats"] = 9
+    empty["tournament_hud_enabled"] = False
     if not path.exists():
         return empty
     try:
@@ -420,6 +453,9 @@ def load_config() -> dict:
         except (TypeError, ValueError):
             max_seats = 9
         result["table_max_seats"] = max(2, min(10, max_seats))
+        result["tournament_hud_enabled"] = bool(
+            data.get("tournament_hud_enabled", False)
+        )
         return result
     except Exception:
         return empty
@@ -598,6 +634,12 @@ class PokerVisionApp:
         self.last_logged_card_state = None
         self.last_logged_numeric_state = None
         self.last_logged_table_state = None
+        self.tournament_lock = threading.Lock()
+        self.tournament_result: dict | None = None
+        self.tournament_pending = False
+        self.last_tournament_scan = 0.0
+        self.last_applied_tournament_scan_at = 0.0
+        self.last_logged_tournament_state = None
         self.player_memory: dict[str, dict] = {}
         self.inactive_seat_memory: dict[int, float] = {}
         self.active_seat_streak: dict[int, int] = {}
@@ -733,6 +775,21 @@ class PokerVisionApp:
                 command=lambda k=key: self.select_region(k),
             ).pack(side="left", padx=(0, 6))
 
+        self.tournament_hud_var = tk.BooleanVar(
+            value=bool(self.config.get("tournament_hud_enabled", False))
+        )
+        ttk.Checkbutton(
+            finance_actions,
+            text="HUD torneio",
+            variable=self.tournament_hud_var,
+            command=self.on_tournament_hud_toggle,
+        ).pack(side="left", padx=(10, 6))
+        ttk.Button(
+            finance_actions,
+            text="TORNEIO / HUD",
+            command=lambda: self.select_region("tournament_hud"),
+        ).pack(side="left", padx=(0, 10))
+
         ttk.Label(
             finance_actions,
             text="Lugares da mesa: controlado pelo site PokerCoach",
@@ -751,6 +808,14 @@ class PokerVisionApp:
         self.pot_coords.pack(anchor="w", pady=(4, 0))
         self.table_coords = ttk.Label(coords, text="")
         self.table_coords.pack(anchor="w", pady=(4, 0))
+        self.tournament_hud_coords = ttk.Label(coords, text="")
+        self.tournament_hud_coords.pack(anchor="w", pady=(4, 0))
+        self.tournament_hud_readout = ttk.Label(
+            coords,
+            text="HUD TORNEIO: desativado",
+            style="Muted.TLabel",
+        )
+        self.tournament_hud_readout.pack(anchor="w", pady=(4, 0))
         self.table_readout = ttk.Label(
             coords,
             text="JOGADORES: automação não configurada",
@@ -865,6 +930,42 @@ class PokerVisionApp:
             command=self.save_sample,
         ).pack(side="right", padx=(10, 0))
 
+    def on_tournament_hud_toggle(self) -> None:
+        enabled = bool(self.tournament_hud_var.get())
+        self.config["tournament_hud_enabled"] = enabled
+        save_config(self.config)
+        if not enabled:
+            with self.tournament_lock:
+                self.tournament_result = None
+                self.tournament_pending = False
+            _bridge_publish_tournament({
+                "tournament_hud_enabled": False,
+                "tournament_hud_state": "disabled",
+                "tournament_hud_at": 0.0,
+                "tournament_rank": None,
+                "tournament_remaining": None,
+                "tournament_avg_stack_bb": None,
+                "tournament_small_blind": None,
+                "tournament_big_blind": None,
+                "tournament_ante": None,
+                "tournament_level_seconds": None,
+            })
+            self.tournament_hud_readout.configure(
+                text="HUD TORNEIO: desativado · motor continua sem esses dados"
+            )
+        else:
+            _bridge_publish_tournament({
+                "tournament_hud_enabled": True,
+                "tournament_hud_state": (
+                    "waiting" if self.config.get("tournament_hud") else "not_configured"
+                ),
+            })
+            if not self.config.get("tournament_hud"):
+                self.tournament_hud_readout.configure(
+                    text="HUD TORNEIO: ativado · selecione a região TORNEIO / HUD"
+                )
+        self.refresh_region_labels()
+
     def on_table_max_changed(self, _event=None) -> None:
         return
 
@@ -875,6 +976,7 @@ class PokerVisionApp:
             "hero_stack": "SEU STACK EM BB",
             "pot": "POTE EM BB",
             "table": "MESA COM ASSENTOS (sem chat e botões)",
+            "tournament_hud": "FAIXA DO TORNEIO (posição, média, blinds e relógio)",
         }
         label = labels.get(key, key.upper())
         self.stop()
@@ -925,6 +1027,12 @@ class PokerVisionApp:
         )
         self.table_coords.configure(
             text=self.format_region("MESA/JOGADORES", self.config.get("table"))
+        )
+        self.tournament_hud_coords.configure(
+            text=self.format_region(
+                "TORNEIO/HUD",
+                self.config.get("tournament_hud"),
+            )
         )
         if self.config["hand"] and self.config["board"]:
             extras = sum(bool(self.config[key]) for key in ("hero_stack", "pot"))
@@ -1290,6 +1398,121 @@ class PokerVisionApp:
             with self.table_lock:
                 self.table_result = result
                 self.table_pending = False
+
+    def _tournament_worker(self, region: dict) -> None:
+        try:
+            result = analyze_tournament_hud(grab_box(region))
+        except Exception as exc:
+            result = {"valid": False, "error": str(exc), "raw_text": ""}
+        finally:
+            result["_scan_at"] = time.time()
+            with self.tournament_lock:
+                self.tournament_result = result
+                self.tournament_pending = False
+
+    def schedule_tournament_scan(self) -> None:
+        if not self.running or self.tournament_pending:
+            return
+        if not bool(self.config.get("tournament_hud_enabled", False)):
+            return
+        region = self.config.get("tournament_hud")
+        if not region:
+            return
+        now = time.time()
+        if now - self.last_tournament_scan < 1.0:
+            return
+        self.last_tournament_scan = now
+        self.tournament_pending = True
+        threading.Thread(
+            target=self._tournament_worker,
+            args=(region,),
+            name="PokerVisionTournamentOCR",
+            daemon=True,
+        ).start()
+
+    def apply_tournament_result(self) -> None:
+        if not bool(self.config.get("tournament_hud_enabled", False)):
+            return
+        with self.tournament_lock:
+            data = dict(self.tournament_result) if self.tournament_result else None
+        if not data:
+            return
+        scan_at = float(data.get("_scan_at", 0) or 0)
+        if scan_at <= self.last_applied_tournament_scan_at:
+            return
+        self.last_applied_tournament_scan_at = scan_at
+
+        if data.get("error"):
+            self.tournament_hud_readout.configure(
+                text=f"HUD TORNEIO: erro · {str(data['error'])[:70]}"
+            )
+            _bridge_publish_tournament({
+                "tournament_hud_enabled": True,
+                "tournament_hud_state": "error",
+                "tournament_hud_at": scan_at,
+            })
+            return
+
+        if not data.get("valid"):
+            self.tournament_hud_readout.configure(
+                text="HUD TORNEIO: leitura parcial · motor continua sem esses dados"
+            )
+            _bridge_publish_tournament({
+                "tournament_hud_enabled": True,
+                "tournament_hud_state": "partial",
+                "tournament_hud_at": scan_at,
+            })
+            return
+
+        rank = data.get("rank")
+        remaining = data.get("remaining")
+        avg = data.get("avg_stack_bb")
+        sb = data.get("small_blind")
+        bb = data.get("big_blind")
+        ante = data.get("ante")
+        seconds = data.get("level_seconds")
+
+        parts = []
+        if rank is not None and remaining is not None:
+            parts.append(f"{int(rank)}/{int(remaining)}")
+        if avg is not None:
+            parts.append(f"média {avg:g} BB")
+        if sb is not None and bb is not None:
+            blind_text = f"{sb:g}/{bb:g}"
+            if ante is not None:
+                blind_text += f"({ante:g})"
+            parts.append(blind_text)
+        if seconds is not None:
+            parts.append(f"{int(seconds)//60:02d}:{int(seconds)%60:02d}")
+
+        self.tournament_hud_readout.configure(
+            text="HUD TORNEIO: " + (" · ".join(parts) if parts else "confirmado")
+        )
+        payload = {
+            "tournament_hud_enabled": True,
+            "tournament_hud_state": "confirmed",
+            "tournament_hud_at": scan_at,
+            "tournament_rank": rank,
+            "tournament_remaining": remaining,
+            "tournament_avg_stack_bb": avg,
+            "tournament_small_blind": sb,
+            "tournament_big_blind": bb,
+            "tournament_ante": ante,
+            "tournament_level_seconds": seconds,
+        }
+        _bridge_publish_tournament(payload)
+
+        signature = (
+            rank, remaining, avg, sb, bb, ante,
+            None if seconds is None else int(seconds) // 5,
+        )
+        if signature != self.last_logged_tournament_state:
+            LOGGER.info(
+                "TOURNAMENT_HUD %s raw=%r",
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")),
+                str(data.get("raw_text", ""))[:240],
+            )
+            self.last_logged_tournament_state = signature
 
     def schedule_table_scan(self) -> None:
         if not self.running or self.table_pending:
@@ -1666,6 +1889,8 @@ class PokerVisionApp:
             self.apply_numeric_result()
             self.schedule_table_scan()
             self.apply_table_result()
+            self.schedule_tournament_scan()
+            self.apply_tournament_result()
 
             hand_image = self.preview_region(
                 self.config["hand"],
@@ -1714,6 +1939,18 @@ class PokerVisionApp:
             "inactive_seat_indices": [],
             "seat_observations": [],
         })
+        hud_enabled = bool(self.config.get("tournament_hud_enabled", False))
+        _bridge_publish_tournament({
+            "tournament_hud_enabled": hud_enabled,
+            "tournament_hud_state": (
+                "waiting"
+                if hud_enabled and self.config.get("tournament_hud")
+                else "not_configured"
+                if hud_enabled
+                else "disabled"
+            ),
+            "tournament_hud_at": 0.0,
+        })
         self.running = True
         _bridge_publish(running=True, confirmed=False)
         self.status.configure(
@@ -1756,6 +1993,9 @@ class PokerVisionApp:
         config_summary["table_max_seats"] = _bridge_snapshot().get(
             "table_max_seats", 9
         )
+        config_summary["tournament_hud_enabled"] = bool(
+            self.config.get("tournament_hud_enabled", False)
+        )
 
         payload = {
             "PokerVision": APP_VERSION,
@@ -1765,6 +2005,11 @@ class PokerVisionApp:
             "config": config_summary,
             "numeric_last": numeric,
             "table_last": table,
+            "tournament_last": (
+                dict(self.tournament_result)
+                if self.tournament_result
+                else None
+            ),
             "log_file": str(log_path()),
         }
         text = json.dumps(payload, indent=2, ensure_ascii=False, default=str)
@@ -1797,7 +2042,7 @@ class PokerVisionApp:
         try:
             grab_box(self.config["hand"]).save(folder / f"{stamp}_hand.png")
             grab_box(self.config["board"]).save(folder / f"{stamp}_board.png")
-            for key in ("hero_stack", "pot", "table"):
+            for key in ("hero_stack", "pot", "table", "tournament_hud"):
                 region = self.config.get(key)
                 if region:
                     grab_box(region).save(folder / f"{stamp}_{key}.png")
