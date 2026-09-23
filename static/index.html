@@ -2,21 +2,31 @@
 <html lang="pt-BR">
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.10.0">
+  <title>PokerCoach Local</title><link rel="stylesheet" href="/style.css?v=3.11.0">
 </head>
 <body>
 <div id="login" class="center card"><h1>♠ PokerCoach</h1><p>Painel local de estudo e gestão de banca</p><input id="password" type="password" placeholder="Senha"><button onclick="login()">Entrar</button><div id="loginMsg" class="error"></div></div>
 <main id="app" hidden>
-  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.10.0 · ASSENTOS</span></header>
+  <header><div><h1>♠ PokerCoach Local</h1><small>Simulação, revisão pós-mão e gestão de banca</small></div><span class="badge">V3.11.0 · MESA</span></header>
   <nav><button class="tab active" data-tab="review">Analisar mão</button><button class="tab" data-tab="bankroll">Controle de banca</button><button class="tab" data-tab="about">Fontes e cobertura</button></nav>
   <section id="review" class="panel active">
     <div class="notice">Use somente em simulações ou depois que a mão terminar. Não utilize como assistência durante partidas comerciais.</div>
     <form id="reviewForm">
-      <div class="quickbar">
-        <div class="segmented" aria-label="Formato"><button type="button" class="choice active" data-field="mode" data-value="cash">Cash</button><button type="button" class="choice" data-field="mode" data-value="tournament">Torneio</button></div>
-        <div class="players"><span>Jogadores na mão</span><div id="playerCounts" class="segmented" role="group" aria-label="Quantidade de jogadores"></div></div>
+      <div class="quickbar setup-bar">
+        <div class="setup-group">
+          <span class="setup-label">Tipo de jogo</span>
+          <div id="gameTypes" class="segmented game-types" role="group" aria-label="Tipo de jogo">
+            <button type="button" class="game-type active" data-value="cash">Cash</button>
+            <button type="button" class="game-type" data-value="sitngo">Sit &amp; Go</button>
+            <button type="button" class="game-type" data-value="mtt">Torneio MTT</button>
+            <button type="button" class="game-type" data-value="spin" disabled title="Perfil específico ainda não modelado">Spin &amp; Go</button>
+          </div>
+          <small id="gameTypeHint">Cash game · sem ICM.</small>
+        </div>
+        <div class="players"><span>Jogadores ativos</span><div id="playerCounts" class="segmented" role="group" aria-label="Quantidade de jogadores ativos"></div></div>
+        <div class="players"><span>Lugares da mesa</span><div id="tableCapacity" class="segmented" role="group" aria-label="Capacidade física da mesa"></div><small>Esta configuração é enviada automaticamente ao PokerVision.</small></div>
       </div>
-      <input type="hidden" name="mode" value="cash"><input type="hidden" name="position" value="BTN">
+      <input type="hidden" name="mode" value="cash"><input type="hidden" name="game_type" value="cash"><input type="hidden" name="position" value="BTN">
       <input type="hidden" name="player_count" value="8">
       <input type="hidden" name="card1"><input type="hidden" name="card2">
       <input type="hidden" name="flop1"><input type="hidden" name="flop2"><input type="hidden" name="flop3"><input type="hidden" name="turn"><input type="hidden" name="river">
@@ -155,5 +165,5 @@
   <p class="picker-tip">Um toque por carta. Para suas cartas e para o flop, a próxima posição é selecionada automaticamente.</p>
   <div id="fastDeck" class="fast-deck" aria-label="Baralho completo"></div>
 </div></div>
-<script src="/app.js?v=3.10.0"></script>
+<script src="/app.js?v=3.11.0"></script>
 </body></html>
