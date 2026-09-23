@@ -237,3 +237,9 @@ select[name="opener_position"] option{background:#0d1e18}
 .game-type.active,.table-capacity.active{background:var(--green);color:#04120d;font-weight:800}
 .game-type:disabled{opacity:.45;cursor:not-allowed}
 #tableCapacity{flex-wrap:wrap}
+
+.vision-player-details{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px;font-size:11px}
+.player-read{display:inline-flex;align-items:center;padding:5px 7px;border:1px solid var(--line);border-radius:8px;background:#0b1b15;color:var(--muted)}
+.player-read.complete{border-color:#38d99677;color:#c9f9e7}
+.player-read.partial{border-color:#f2c94c77;color:#f9eaa1}
+.player-read.stale{border-color:#f2c94c55;color:#c7b970;opacity:.8}
