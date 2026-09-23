@@ -64,8 +64,88 @@ def plausible_name(text: str) -> bool:
     return letters >= 2
 
 
-def build_seat_observations(lines: list[dict]) -> list[dict]:
-    """Pair perimeter stack labels with the nearest plausible player name."""
+def parse_action_text(text: str) -> str:
+    folded = fold_text(text)
+    if "ALL IN" in folded or "ALL-IN" in folded:
+        return "ALL-IN"
+    if "DESIST" in folded:
+        return "FOLD"
+    if "AUMENT" in folded or "RE-RAISE" in folded or "RERAISE" in folded:
+        return "RAISE"
+    if "PAGO" in folded or "PAGOU" in folded:
+        return "CALL"
+    if "APOST" in folded:
+        return "BET"
+    if "PASSO" in folded or "PASSOU" in folded:
+        return "CHECK"
+    return ""
+
+
+def _nearest_inward_bet(
+    sx: float,
+    sy: float,
+    all_lines: list[dict],
+    stack_line: dict,
+) -> float | None:
+    """Find a BB amount between one seat plaque and the table center."""
+    cx, cy = 0.50, 0.46
+    vx, vy = cx - sx, cy - sy
+    length = math.hypot(vx, vy)
+    if length <= 0.01:
+        return None
+    ux, uy = vx / length, vy / length
+
+    candidates = []
+    for line in all_lines:
+        if line is stack_line:
+            continue
+        text = str(line.get("text", ""))
+        if "POTE" in fold_text(text):
+            continue
+        value = parse_stack_bb(text)
+        if value is None:
+            continue
+        x, y = float(line["x"]), float(line["y"])
+        dx, dy = x - sx, y - sy
+        projection = dx * ux + dy * uy
+        if projection <= 0.045 or projection >= min(0.34, length * 0.92):
+            continue
+        perpendicular = abs(dx * uy - dy * ux)
+        if perpendicular > 0.085:
+            continue
+        candidates.append((projection + perpendicular * 1.8, value))
+    if not candidates:
+        return None
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def _nearby_action(
+    sx: float,
+    sy: float,
+    all_lines: list[dict],
+) -> str:
+    candidates = []
+    for line in all_lines:
+        action = parse_action_text(str(line.get("text", "")))
+        if not action:
+            continue
+        x, y = float(line["x"]), float(line["y"])
+        dx, dy = x - sx, y - sy
+        if abs(dx) <= 0.18 and abs(dy) <= 0.16:
+            candidates.append((dx * dx + dy * dy, action))
+    if not candidates:
+        return ""
+    candidates.sort(key=lambda item: item[0])
+    return candidates[0][1]
+
+
+def build_seat_observations(
+    lines: list[dict],
+    all_lines: list[dict] | None = None,
+) -> list[dict]:
+    """Pair seat plaques with name, stack, current bet and visible action."""
+    all_lines = all_lines or lines
     observations: list[dict] = []
     stack_lines = [line for line in lines if parse_stack_bb(line["text"]) is not None]
 
@@ -110,11 +190,18 @@ def build_seat_observations(lines: list[dict]) -> list[dict]:
         elif is_disconnected_label(joined):
             status = "disconnected"
 
+        bet_bb = _nearest_inward_bet(sx, sy, all_lines, stack_line)
+        action = _nearby_action(sx, sy, all_lines)
+        if action == "ALL-IN":
+            status = "active"
+
         observations.append({
             "x": round(sx, 4),
             "y": round(sy, 4),
             "name": name[:32],
             "stack_bb": stack,
+            "bet_bb": bet_bb,
+            "action": action or "unknown",
             "status": status,
             "raw": str(stack_line["text"])[:80],
         })
@@ -220,7 +307,6 @@ def analyze_table(image, max_seats: int = 9) -> dict:
 
     width, height = processed.size
     grouped: dict[tuple[int, int, int], list[dict]] = defaultdict(list)
-    evidence_words = 0
 
     count = len(data.get("text", []))
     for i in range(count):
@@ -238,12 +324,6 @@ def analyze_table(image, max_seats: int = 9) -> dict:
         top = int(data["top"][i])
         w = int(data["width"][i])
         h = int(data["height"][i])
-        cx = left + w / 2
-        cy = top + h / 2
-        if not _perimeter_line(cx, cy, width, height):
-            continue
-
-        evidence_words += 1
         key = (
             int(data.get("block_num", [0] * count)[i]),
             int(data.get("par_num", [0] * count)[i]),
@@ -253,8 +333,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
             {"text": text, "left": left, "top": top, "width": w, "height": h}
         )
 
-    lines: list[dict] = []
-    inactive_points: list[tuple[float, float]] = []
+    all_lines: list[dict] = []
     for words in grouped.values():
         words.sort(key=lambda item: item["left"])
         line_text = " ".join(item["text"] for item in words)
@@ -264,13 +343,29 @@ def analyze_table(image, max_seats: int = 9) -> dict:
         bottom = max(item["top"] + item["height"] for item in words)
         cx = (left + right) / 2
         cy = (top + bottom) / 2
-        lines.append({
+        all_lines.append({
             "text": line_text,
             "x": cx / width,
             "y": cy / height,
         })
-        if is_inactive_label(line_text):
-            inactive_points.append((cx / width, cy / height))
+
+    lines = [
+        line for line in all_lines
+        if _perimeter_line(
+            float(line["x"]) * width,
+            float(line["y"]) * height,
+            width,
+            height,
+        )
+    ]
+    evidence_words = sum(
+        max(1, len(str(line["text"]).split()))
+        for line in lines
+    )
+    inactive_points: list[tuple[float, float]] = []
+    for line in lines:
+        if is_inactive_label(line["text"]):
+            inactive_points.append((float(line["x"]), float(line["y"])))
 
     inactive_clusters = cluster_points(inactive_points)
     inactive_count = min(len(inactive_clusters), max_seats)
@@ -283,7 +378,7 @@ def analyze_table(image, max_seats: int = 9) -> dict:
 
     confidence = "alta" if evidence_words >= max(5, max_seats) else "média"
     raw = " | ".join(line["text"] for line in lines)[:320]
-    seat_observations = build_seat_observations(lines)
+    seat_observations = build_seat_observations(lines, all_lines)
 
     return {
         "valid": valid,
