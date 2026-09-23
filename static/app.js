@@ -258,50 +258,87 @@ function seatLayout(count){
 }
 
 
-function mapObservationsToCurrentSeats(observations,count){
+function physicalSeatCount(){
+  const count=Number(tableMaxSeats||playerCount||8);
+  return SEAT_LAYOUTS[count]?count:8;
+}
+
+function inactivePhysicalSeats(){
+  const count=physicalSeatCount();
+  const inactive=new Set(
+    (Array.isArray(visionInactiveSeatIndices)?visionInactiveSeatIndices:[])
+      .map(Number)
+      .filter(seat=>Number.isInteger(seat)&&seat>=0&&seat<count&&seat!==0)
+  );
+  return inactive;
+}
+
+function activePhysicalSeats(){
+  const count=physicalSeatCount();
+  const inactive=inactivePhysicalSeats();
+  const seats=[];
+  for(let seat=0;seat<count;seat++){
+    if(!inactive.has(seat)) seats.push(seat);
+  }
+  return seats;
+}
+
+function physicalPositionMap(){
+  const map=new Map();
+  const active=activePhysicalSeats();
+  const positions=positionOrder[playerCount]||[];
+  if(!positions.length || active.length!==playerCount || !active.includes(dealerSeat)){
+    return map;
+  }
+
+  const ordered=[];
+  const count=physicalSeatCount();
+  for(let step=0;step<count;step++){
+    const seat=(dealerSeat+step)%count;
+    if(active.includes(seat)) ordered.push(seat);
+  }
+  ordered.forEach((seat,index)=>{
+    if(positions[index]) map.set(seat,positions[index]);
+  });
+  return map;
+}
+
+function mapObservationsToCurrentSeats(observations,_count){
+  const count=physicalSeatCount();
   const layout=seatLayout(count);
   const mapped=new Map();
   const source=(Array.isArray(observations)?observations:[])
     .filter(obs=>obs && obs.status!=='inactive');
 
-  // When the graphical table has the same number of seats as the physical
-  // PokerStars table, use the stable physical seat index. Missing/dimmed OCR
-  // on one player can no longer shift another player's stack into that seat.
-  if(count===Number(tableMaxSeats)){
-    source.forEach(obs=>{
-      const seat=Number(obs.seat_index);
-      if(Number.isInteger(seat) && seat>=0 && seat<count){
-        const previous=mapped.get(seat);
-        if(!previous || (previous.stale && !obs.stale)){
-          mapped.set(seat,obs);
-        }
-      }
-    });
-    return mapped;
-  }
-
-  // Fallback for a compressed active-player layout. Assign each observation
-  // independently to its nearest graphical seat rather than greedily moving
-  // remaining observations when one OCR reading disappears.
   source.forEach(obs=>{
+    const seat=Number(obs.seat_index);
+    if(Number.isInteger(seat) && seat>=0 && seat<count){
+      const previous=mapped.get(seat);
+      if(!previous || (previous.stale && !obs.stale)){
+        mapped.set(seat,obs);
+      }
+      return;
+    }
+
     const ox=Number(obs.x)*100;
     const oy=Number(obs.y)*100;
     if(!Number.isFinite(ox)||!Number.isFinite(oy)) return;
     let bestSeat=-1;
     let bestDistance=Infinity;
-    layout.forEach(([x,y],seat)=>{
+    layout.forEach(([x,y],candidate)=>{
       const dx=(x-ox)/100;
       const dy=(y-oy)/100;
       const distance=dx*dx+dy*dy;
       if(distance<bestDistance){
         bestDistance=distance;
-        bestSeat=seat;
+        bestSeat=candidate;
       }
     });
-    if(bestSeat<0 || bestDistance>0.075) return;
-    const previous=mapped.get(bestSeat);
-    if(!previous || (previous.stale && !obs.stale)){
-      mapped.set(bestSeat,obs);
+    if(bestSeat>=0 && bestDistance<=0.075){
+      const previous=mapped.get(bestSeat);
+      if(!previous || (previous.stale && !obs.stale)){
+        mapped.set(bestSeat,obs);
+      }
     }
   });
   return mapped;
@@ -338,8 +375,8 @@ function renderVisionHealthOverlay(){
   if(!layer) return;
   layer.innerHTML='';
 
-  const count=Number(playerCount||8);
-  if(!SEAT_LAYOUTS[count]) return;
+  const count=physicalSeatCount();
+  const inactive=inactivePhysicalSeats();
   const mapped=mapObservationsToCurrentSeats(visionSeatObservations,count);
   const tableError=visionTableState==='error';
 
@@ -347,88 +384,118 @@ function renderVisionHealthOverlay(){
     const dot=document.createElement('span');
     const obs=mapped.get(i);
     const heroStack=Number(visionLastState?.hero_stack_bb);
+    const isInactive=inactive.has(i);
     const hasStack=i===0
       ? Number.isFinite(heroStack) && heroStack>0
       : obs && Number.isFinite(Number(obs.stack_bb));
     const stale=i===0 ? false : (Boolean(obs?.stale)||obs?.data_state==='stale');
+
     let health='partial';
-    if(tableError) health='error';
-    else if(hasStack && !stale) health='ok';
+    let title='Stack ainda não lido';
+    if(isInactive){
+      health='absent';
+      title='Ausente / lugar vazio';
+    }else if(tableError){
+      health='error';
+      title='Erro na leitura da mesa';
+    }else if(hasStack && !stale){
+      health='ok';
+      const shownStack=i===0?heroStack:Number(obs?.stack_bb);
+      title=`Stack ${formatBB(shownStack)} BB`;
+    }else if(hasStack){
+      const shownStack=i===0?heroStack:Number(obs?.stack_bb);
+      title=`Stack ${formatBB(shownStack)} BB · última leitura conhecida`;
+    }
 
     dot.className=`vision-seat-dot ${health}`;
     dot.style.left=x+'%';
     dot.style.top=y+'%';
-    const shownStack=i===0?heroStack:Number(obs?.stack_bb);
-    dot.title=hasStack
-      ? `Stack ${formatBB(shownStack)} BB${stale?' · desatualizado':''}`
-      : 'Stack ainda não lido';
+    dot.title=title;
     layer.appendChild(dot);
   });
-
-  const physicalCount=Number(tableMaxSeats||count);
-  if(SEAT_LAYOUTS[physicalCount]){
-    const inactive=visionInactiveSeatIndices.length
-      ? new Set(visionInactiveSeatIndices)
-      : mapPointsToLayout(visionInactivePoints,physicalCount);
-    seatLayout(physicalCount).forEach(([x,y],i)=>{
-      if(!inactive.has(i)) return;
-      const dot=document.createElement('span');
-      dot.className='vision-seat-dot absent';
-      dot.style.left=x+'%';
-      dot.style.top=y+'%';
-      dot.title='Ausente / lugar vazio confirmado';
-      layer.appendChild(dot);
-    });
-  }
 }
 
 function renderTable(){
   if(!positionOrder[playerCount]) return;
+
+  const physicalCount=physicalSeatCount();
+  const inactive=inactivePhysicalSeats();
+  const positions=physicalPositionMap();
+  const mappedStacks=mapObservationsToCurrentSeats(
+    visionSeatObservations,
+    physicalCount
+  );
   const seats=$('#seats');
   seats.innerHTML='';
-  $('#pokerTable').dataset.players=playerCount;
+  $('#pokerTable').dataset.players=physicalCount;
 
-  seatLayout(playerCount).forEach(([x,y],i)=>{
-    const offset=(i-dealerSeat+playerCount)%playerCount;
-    const pos=positionOrder[playerCount][offset];
+  seatLayout(physicalCount).forEach(([x,y],i)=>{
+    const isInactive=inactive.has(i);
+    const pos=positions.get(i)||'';
     const b=document.createElement('button');
     b.type='button';
-    b.className='seat'+(i===0?' hero':'')+(i===dealerSeat?' dealer':'');
-    applyPositionColor(b,pos);
+    b.className='seat'
+      +(i===0?' hero':'')
+      +(i===dealerSeat?' dealer':'')
+      +(isInactive?' inactive':'');
+    applyPositionColor(b,isInactive?'':pos);
     b.style.left=x+'%';
     b.style.top=y+'%';
-    const mappedStacks=mapObservationsToCurrentSeats(visionSeatObservations,playerCount);
+
     const stackObs=mappedStacks.get(i);
-    const heroStack=Number(visionLastState?.hero_stack_bb ?? $('#reviewForm')?.elements?.stack_bb?.value);
+    const heroStack=Number(
+      visionLastState?.hero_stack_bb
+      ?? $('#reviewForm')?.elements?.stack_bb?.value
+    );
     let stackText='';
     if(i===0 && Number.isFinite(heroStack) && heroStack>0){
       stackText=`<span class="seat-stack">${formatBB(heroStack)} BB</span>`;
-    }else if(i!==0 && stackObs && Number.isFinite(Number(stackObs.stack_bb))){
+    }else if(!isInactive && i!==0 && stackObs && Number.isFinite(Number(stackObs.stack_bb))){
       stackText=`<span class="seat-stack${stackObs.stale?' stale':''}">${formatBB(stackObs.stack_bb)} BB</span>`;
     }
-    b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':'♟'}</span><b>${pos}</b>${stackText}${i===dealerSeat?'<i>D</i>':''}`;
-    b.setAttribute('aria-label',`${i===0?'Você':`Assento ${i+1}`}, ${pos}. Colocar botão aqui`);
+
+    const seatLabel=isInactive?'AUSENTE':(pos||'—');
+    b.innerHTML=`<span class="avatar">${i===0?'VOCÊ':(isInactive?'×':'♟')}</span><b>${seatLabel}</b>${stackText}${i===dealerSeat?'<i>D</i>':''}`;
+    b.setAttribute(
+      'aria-label',
+      isInactive
+        ? `Assento ${i+1}, ausente ou vazio`
+        : `${i===0?'Você':`Assento ${i+1}`}, ${pos||'posição aguardando'}. Colocar botão aqui`
+    );
     b.setAttribute('aria-pressed',String(i===dealerSeat));
+
     b.onclick=()=>{
+      if(isInactive){
+        $('#tableHint').textContent='Esse lugar está ausente/vazio. Clique no jogador que realmente está com o botão.';
+        return;
+      }
       dealerSeat=i;
       invalidateReview();
       renderTable();
-      if(visionLastState) applyVisionPlayerAutomation(visionLastState);
       scheduleAnalysis();
     };
     seats.appendChild(b);
   });
 
-  const heroOffset=(playerCount-dealerSeat)%playerCount;
-  const heroPos=positionOrder[playerCount][heroOffset];
-  $('#heroPosition').textContent=heroPos;
-  applyPositionColor($('#heroPosition'),heroPos);
-  applyPositionColor($('.position-readout'),heroPos);
-  $('#reviewForm').elements.position.value=heroPos;
+  const heroPos=positions.get(0)||'';
+  if(heroPos){
+    $('#heroPosition').textContent=heroPos;
+    applyPositionColor($('#heroPosition'),heroPos);
+    applyPositionColor($('.position-readout'),heroPos);
+    $('#reviewForm').elements.position.value=heroPos;
+  }else{
+    $('#heroPosition').textContent='AGUARDANDO';
+    applyPositionColor($('#heroPosition'),'');
+    applyPositionColor($('.position-readout'),'');
+    $('#reviewForm').elements.position.value='';
+  }
+
   $('#reviewForm').elements.player_count.value=playerCount;
-  $('#tableHint').textContent=playerCount===2
-    ?'Heads-up: o botão também é o small blind.'
-    :'Clique em qualquer assento para posicionar o botão. O motor identifica sua posição automaticamente.';
+  const activeSeats=activePhysicalSeats();
+  const reliable=activeSeats.length===playerCount && activeSeats.includes(dealerSeat);
+  $('#tableHint').textContent=reliable
+    ? `Mesa física de ${physicalCount} lugares · ${playerCount} jogadores ativos. Clique no mesmo jogador que está com o botão na mesa real.`
+    : `Aguardando mapear os assentos ativos (${activeSeats.length}/${playerCount}). Os lugares físicos permanecem fixos.`;
 
   const playerSelect=$('#playerCountSelect');
   if(playerSelect) playerSelect.value=String(playerCount);
@@ -480,7 +547,9 @@ async function chooseTableCapacity(count){
     const config=await api('/api/vision/config',{table_max_seats:count});
     tableMaxSeats=Number(config.table_max_seats)||count;
     if(playerCount>tableMaxSeats) choosePlayerCount(tableMaxSeats);
+    if(dealerSeat>=tableMaxSeats) dealerSeat=0;
     renderTableCapacityControls();
+    renderTable();
     try{localStorage.setItem('pokercoach.tableMaxSeats',String(tableMaxSeats))}catch(e){}
   }catch(e){
     const hint=$('#tableHint');
@@ -503,7 +572,7 @@ async function initVisionConfig(){
 
 function choosePlayerCount(count){
   playerCount=count;
-  dealerSeat=Math.min(dealerSeat,count-1);
+  if(dealerSeat>=physicalSeatCount()) dealerSeat=0;
   invalidateReview();
   renderTable();
   try{localStorage.setItem('pokercoach.playerCount',String(count))}catch(e){}
@@ -942,13 +1011,14 @@ function setVisionPlayerAutoEnabled(enabled){
 }
 
 function mappedVisionPlayers(){
-  if(!positionOrder?.[playerCount]) return [];
-  const mapped=mapObservationsToCurrentSeats(visionSeatObservations,playerCount);
+  const mapped=mapObservationsToCurrentSeats(
+    visionSeatObservations,
+    physicalSeatCount()
+  );
+  const positions=physicalPositionMap();
   const players=[];
   mapped.forEach((obs,seat)=>{
-    const offset=(seat-dealerSeat+playerCount)%playerCount;
-    const position=positionOrder[playerCount][offset]||'';
-    players.push({...obs,seat,position});
+    players.push({...obs,seat,position:positions.get(seat)||''});
   });
   return players;
 }
@@ -1149,7 +1219,7 @@ function applyPendingPlayerCountForNewHand(){
   if(playerCount===count) return false;
 
   playerCount=count;
-  dealerSeat=Math.min(dealerSeat,count-1);
+  if(dealerSeat>=physicalSeatCount()) dealerSeat=0;
   try{localStorage.setItem('pokercoach.playerCount',String(count))}catch(e){}
   renderTable();
   const meter=$('#visionPlayers');
@@ -1279,6 +1349,8 @@ function initPokerVision(){
 
 function readiness(){
   const f=$('#reviewForm').elements;
+  if(!f.position.value)
+    return 'Aguardando mapear os assentos ativos e o botão.';
   if(!f.card1.value||!f.card2.value)
     return 'Escolha suas duas cartas.';
   const n=boardCount();
