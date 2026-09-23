@@ -75,6 +75,10 @@ const GAME_TYPES={
     mode:'tournament',
     hint:'Sit & Go · usa a base de torneio atual; ICM especializado ainda não está modelado.'
   },
+  spin:{
+    mode:'spin',
+    hint:'Spin & Go · motor dedicado 3-handed → heads-up por stack efetivo.'
+  },
   mtt:{
     mode:'tournament',
     hint:'Torneio MTT · usa a base de torneio atual; bolha/pay jumps ainda exigem modelagem de ICM.'
@@ -88,6 +92,7 @@ const ACTION_LABELS={
   'BET':'APOSTAR',
   'RAISE':'AUMENTAR',
   'ALL-IN':'ALL-IN',
+  'LIMP':'LIMP',
   'SEM AÇÃO':'SEM AÇÃO',
   'SEM COBERTURA':'SEM COBERTURA'
 };
@@ -268,6 +273,12 @@ function seatLayout(count){
 
 
 function physicalSeatCount(){
+  // Spin & Go usa mesa física de 3 lugares. Em treino manual heads-up,
+  // sem um mapa fresco do PokerVision, mostramos apenas os dois jogadores.
+  if(gameType==='spin'){
+    if(playerCount===2 && !visionPhysicalSeatStateFresh()) return 2;
+    return 3;
+  }
   const count=Number(tableMaxSeats||playerCount||8);
   return SEAT_LAYOUTS[count]?count:8;
 }
@@ -653,6 +664,13 @@ function selectGameType(value){
   f.mode.value=cfg.mode;
   const select=$('#gameTypeSelect');
   if(select && select.value!==gameType) select.value=gameType;
+  if(gameType==='spin' && ![2,3].includes(playerCount)){
+    playerCount=3;
+    const playerSelect=$('#playerCountSelect');
+    if(playerSelect) playerSelect.value='3';
+    try{localStorage.setItem('pokercoach.playerCount','3')}catch(e){}
+    if(Object.keys(positionOrder||{}).length) renderTable();
+  }
   try{localStorage.setItem('pokercoach.gameType',gameType)}catch(e){}
   invalidateReview();
   scheduleAnalysis();
@@ -661,7 +679,7 @@ function selectGameType(value){
 function initGameType(){
   let saved='cash';
   try{saved=localStorage.getItem('pokercoach.gameType')||'cash'}catch(e){}
-  if(!GAME_TYPES[saved] || saved==='spin') saved='cash';
+  if(!GAME_TYPES[saved]) saved='cash';
   const select=$('#gameTypeSelect');
   if(select) select.onchange=()=>selectGameType(select.value);
   selectGameType(saved);
@@ -738,6 +756,7 @@ async function initTable(){
       const saved=Number(localStorage.getItem('pokercoach.playerCount'));
       if(positionOrder[saved]) playerCount=saved;
     }catch(e){}
+    if(gameType==='spin' && ![2,3].includes(playerCount)) playerCount=3;
     if(select) select.value=String(playerCount);
     renderTable();
     $('.analyze-btn').disabled=false;
