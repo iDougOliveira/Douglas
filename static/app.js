@@ -56,6 +56,7 @@ let visionPendingMaxSeats=null;
 let visionPendingConfirmedAt=0;
 let visionTableState='disabled';
 let visionInactivePoints=[];
+let visionInactiveSeatIndices=[];
 let visionSeatObservations=[];
 let visionLastState=null;
 let visionPlayerAutoEnabled=true;
@@ -366,14 +367,16 @@ function renderVisionHealthOverlay(){
 
   const physicalCount=Number(tableMaxSeats||count);
   if(SEAT_LAYOUTS[physicalCount]){
-    const inactive=mapPointsToLayout(visionInactivePoints,physicalCount);
+    const inactive=visionInactiveSeatIndices.length
+      ? new Set(visionInactiveSeatIndices)
+      : mapPointsToLayout(visionInactivePoints,physicalCount);
     seatLayout(physicalCount).forEach(([x,y],i)=>{
       if(!inactive.has(i)) return;
       const dot=document.createElement('span');
       dot.className='vision-seat-dot absent';
       dot.style.left=x+'%';
       dot.style.top=y+'%';
-      dot.title='Lugar vazio';
+      dot.title='Ausente / lugar vazio confirmado';
       layer.appendChild(dot);
     });
   }
@@ -1084,6 +1087,9 @@ function applyVisionTableState(state){
   visionLastState=state;
   visionTableState=String(state?.table_scan_state||'disabled');
   visionInactivePoints=Array.isArray(state?.inactive_points)?state.inactive_points:[];
+  visionInactiveSeatIndices=Array.isArray(state?.inactive_seat_indices)
+    ? state.inactive_seat_indices.map(Number).filter(Number.isInteger)
+    : [];
   visionSeatObservations=Array.isArray(state?.seat_observations)?state.seat_observations:[];
   renderTable();
   const count=Number(state?.detected_player_count||0);
