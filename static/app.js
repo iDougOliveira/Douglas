@@ -399,7 +399,7 @@ function selectGameType(value){
   const f=$('#reviewForm').elements;
   f.game_type.value=value;
   f.mode.value=cfg.mode;
-  $('.game-type').forEach(button=>{
+  $$('.game-type').forEach(button=>{
     button.classList.toggle('active',button.dataset.value===value);
     button.setAttribute('aria-pressed',String(button.dataset.value===value));
   });
@@ -415,7 +415,7 @@ function initGameType(){
   try{saved=localStorage.getItem('pokercoach.gameType')||'cash'}catch(e){}
   if(!GAME_TYPES[saved]) saved='cash';
   selectGameType(saved);
-  $('.game-type').forEach(button=>{
+  $$('.game-type').forEach(button=>{
     if(button.disabled) return;
     button.onclick=()=>selectGameType(button.dataset.value);
   });
