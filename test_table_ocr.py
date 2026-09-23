@@ -36,6 +36,33 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertEqual(table_ocr.parse_stack_bb("Player 216,9 BB"), 216.9)
         self.assertIsNone(table_ocr.parse_stack_bb("Pote: 8,5"))
 
+    def test_action_parser(self):
+        self.assertEqual(table_ocr.parse_action_text("Pago"), "CALL")
+        self.assertEqual(table_ocr.parse_action_text("Aumento para 8 BB"), "RAISE")
+        self.assertEqual(table_ocr.parse_action_text("Desisto"), "FOLD")
+        self.assertEqual(table_ocr.parse_action_text("All In"), "ALL-IN")
+        self.assertEqual(table_ocr.parse_action_text("texto qualquer"), "")
+
+    def test_seat_observation_adds_bet_and_action(self):
+        perimeter = [
+            {"text": "Alice", "x": 0.15, "y": 0.20},
+            {"text": "89,7 BB", "x": 0.15, "y": 0.24},
+        ]
+        all_lines = perimeter + [
+            {"text": "3 BB", "x": 0.25, "y": 0.30},
+            {"text": "Pago", "x": 0.18, "y": 0.18},
+            {"text": "Pote: 18 BB", "x": 0.50, "y": 0.46},
+        ]
+        observations = table_ocr.build_seat_observations(
+            perimeter,
+            all_lines,
+        )
+        self.assertEqual(len(observations), 1)
+        self.assertEqual(observations[0]["name"], "Alice")
+        self.assertEqual(observations[0]["stack_bb"], 89.7)
+        self.assertEqual(observations[0]["bet_bb"], 3.0)
+        self.assertEqual(observations[0]["action"], "CALL")
+
     def test_seat_observation_pairing(self):
         lines = [
             {"text": "Alice", "x": 0.15, "y": 0.20},
