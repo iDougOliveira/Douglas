@@ -3,7 +3,7 @@ import json
 import math
 from pathlib import Path
 
-ENGINE_VERSION = "3.8.1"
+ENGINE_VERSION = "3.9.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {
@@ -612,6 +612,39 @@ def _hand_info(hole, board):
         and not private_improvement
     )
 
+    board_trip_rank = next(
+        (rank for rank, count in board_rc.items() if count >= 3),
+        None,
+    )
+    board_trips_full_house = bool(
+        board_trip_rank and category == "full_house"
+    )
+    full_house_pair_value = None
+    top_board_side_value = None
+    if board_trip_rank:
+        side_values = [
+            RANKS.index(rank) + 2
+            for rank in board_rc
+            if rank != board_trip_rank
+        ]
+        if side_values:
+            top_board_side_value = max(side_values)
+        pair_values = [
+            RANKS.index(rank) + 2
+            for rank, count in rc.items()
+            if rank != board_trip_rank and count >= 2
+        ]
+        if pair_values:
+            full_house_pair_value = max(pair_values)
+
+    board_owned_full_house = False
+    if board_trip_rank and category == "full_house":
+        board_side_pairs = [
+            rank for rank, count in board_rc.items()
+            if rank != board_trip_rank and count >= 2
+        ]
+        board_owned_full_house = bool(board_side_pairs)
+
     return {
         "category": category,
         "label": label,
@@ -626,6 +659,11 @@ def _hand_info(hole, board):
         "private_improvement": private_improvement,
         "shared_kicker_rank": shared_kicker_rank,
         "shared_kicker_value": shared_kicker_value,
+        "board_trip_rank": board_trip_rank,
+        "board_trips_full_house": board_trips_full_house,
+        "full_house_pair_value": full_house_pair_value,
+        "top_board_side_value": top_board_side_value,
+        "board_owned_full_house": board_owned_full_house,
     }
 
 def _texture(board):
@@ -703,6 +741,60 @@ def postflop(data,c,r):
     opponents = int(number(data,"active_opponents",1,1,9))
     if opponents > 1:
         r["notes"].append("Pote multiway: o modo de estudo usa uma linha mais conservadora.")
+
+    # A full house on a tripled board can be much weaker than the label
+    # suggests. Example: Hero 66 on A-4-4-K-4 has 44466, while any Ax,
+    # Kx, or higher pocket pair can make a superior full house. Never route
+    # these hands through the generic "full house = automatic stack-off" path.
+    if info["board_trips_full_house"]:
+        pair_value = info["full_house_pair_value"] or 0
+        top_side = info["top_board_side_value"] or 0
+        top_full_house = pair_value >= top_side and top_side > 0
+        pair_rank = RANKS[pair_value - 2] if pair_value >= 2 else "?"
+        r["hand_class"] = f"full house em board triplicado · par {pair_rank}"
+        r["notes"].append(
+            "O board já contém uma trinca. O full house precisa ser avaliado "
+            "pela força do par complementar; não é tratado como stack-off automático."
+        )
+
+        if info["board_owned_full_house"]:
+            r["notes"].append(
+                "O próprio board já forma full house para todos; as cartas privadas "
+                "servem principalmente para desempate."
+            )
+            if call > 0:
+                r.update(action="FOLD", sizing="Evitar compromisso grande sem vantagem privada clara")
+            else:
+                r.update(action="CHECK", sizing="Passar; full house é compartilhado pelo board")
+            return r
+
+        if not top_full_house:
+            r["notes"].append(
+                "Seu par complementar não é o maior rank lateral do board. "
+                "Existem vários full houses superiores possíveis."
+            )
+            if call > 0:
+                if pressure in {"high", "allin"}:
+                    r.update(
+                        action="FOLD",
+                        sizing="Desistir; full house relativo fraco para pressão grande",
+                    )
+                else:
+                    r.update(
+                        action="CALL",
+                        sizing=f"Pagar {min(call, c['stack']):g} BB sem aumentar",
+                    )
+            else:
+                r.update(
+                    action="CHECK",
+                    sizing="Passar; valor relativo insuficiente para empilhar automaticamente",
+                )
+            return r
+
+        r["notes"].append(
+            "Seu par complementar usa o maior rank lateral do board; "
+            "é uma versão forte deste padrão, mas ainda não ignora stack/pot."
+        )
 
     # Critical distinction: two pair can be entirely on the board. In that
     # case Hero does NOT own a normal two-pair value hand; the hole cards are
@@ -787,17 +879,33 @@ def postflop(data,c,r):
         return r
 
     # Ninguém apostou antes da decisão do herói.
+    def set_bet(frac, label):
+        target = round(pot * frac, 2)
+        actual = round(min(target, c["stack"]), 2)
+        if actual >= c["stack"]:
+            r.update(
+                action="ALL-IN",
+                sizing=f"All-in {actual:g} BB; sizing alvo de {target:g} BB excede o stack",
+                bet_bb=actual,
+            )
+        else:
+            r.update(
+                action="BET",
+                sizing=label,
+                bet_bb=actual,
+            )
+
     if info["score"] >= 2:
         frac = .67 if texture["wet"] else .50
-        r.update(action="BET", sizing=f"Apostar ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+        set_bet(frac, f"Apostar ~{frac:.0%} do pote")
     elif info["overpair"] or info["top_pair"]:
         frac = .50 if texture["wet"] else .33
-        r.update(action="BET", sizing=f"Apostar ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+        set_bet(frac, f"Apostar ~{frac:.0%} do pote")
     elif info["outs"] >= 8:
         frac = .50 if texture["wet"] else .33
-        r.update(action="BET", sizing=f"Semi-blefe ~{frac:.0%} do pote", bet_bb=round(pot*frac,2))
+        set_bet(frac, f"Semi-blefe ~{frac:.0%} do pote")
     elif data.get("situation","unopened") == "unopened" and not texture["wet"] and opponents == 1:
-        r.update(action="BET", sizing="C-bet pequena ~33% do pote", bet_bb=round(pot*.33,2))
+        set_bet(.33, "C-bet pequena ~33% do pote")
     else:
         r.update(action="CHECK", sizing="Passar a ação")
     return r
