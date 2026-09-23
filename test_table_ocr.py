@@ -31,6 +31,15 @@ class TableOCRLogicTests(unittest.TestCase):
         self.assertIsNone(table_ocr.infer_player_count(9, 9))
         self.assertIsNone(table_ocr.infer_player_count(2, 2))
 
+    def test_absent_label_maps_to_physical_seat(self):
+        seat, distance = table_ocr.nearest_seat_index(0.18, 0.73, 9)
+        self.assertEqual(seat, 1)
+        self.assertLess(distance, 0.01)
+
+        seat, distance = table_ocr.nearest_seat_index(0.66, 0.10, 9)
+        self.assertEqual(seat, 5)
+        self.assertLess(distance, 0.01)
+
     def test_pot_value_is_never_a_seat_stack(self):
         lines = [
             {"text": "Pote: 5,2 BB", "x": 0.50, "y": 0.24},
