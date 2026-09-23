@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.8.1"
+APP_VERSION = "0.9.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -595,6 +595,9 @@ class PokerVisionApp:
         self.last_logged_card_state = None
         self.last_logged_numeric_state = None
         self.last_logged_table_state = None
+        self.player_memory: dict[str, dict] = {}
+        self.player_round_key = None
+        self.player_round_max_bet = 0.0
         _bridge_publish(
             running=False,
             confirmed=False,
@@ -748,6 +751,14 @@ class PokerVisionApp:
             style="Muted.TLabel",
         )
         self.table_readout.pack(anchor="w", pady=(5, 0))
+        self.players_readout = ttk.Label(
+            coords,
+            text="ASSENTOS: aguardando leitura de nome/stack/aposta/ação",
+            style="Muted.TLabel",
+            wraplength=960,
+            justify="left",
+        )
+        self.players_readout.pack(anchor="w", pady=(4, 0))
         self.numeric_readout = ttk.Label(
             coords,
             text="OCR NUMÉRICO: aguardando monitoramento",
@@ -1069,6 +1080,139 @@ class PokerVisionApp:
     def _round_value(value):
         return None if value is None else round(float(value), 4)
 
+    @staticmethod
+    def _player_key(obs: dict) -> str:
+        name = str(obs.get("name", "")).strip().casefold()
+        if name:
+            return "name:" + name
+        x = round(float(obs.get("x", 0)), 1)
+        y = round(float(obs.get("y", 0)), 1)
+        return f"pos:{x:.1f}:{y:.1f}"
+
+    def _current_round_key(self) -> tuple:
+        state = _bridge_snapshot()
+        return (
+            tuple(state.get("hand", [])),
+            str(state.get("street", "AGUARDANDO")),
+            tuple(state.get("board", [])),
+        )
+
+    def _reset_player_round_if_needed(self) -> None:
+        key = self._current_round_key()
+        if key == self.player_round_key:
+            return
+        self.player_round_key = key
+        self.player_round_max_bet = 0.0
+        for memory in self.player_memory.values():
+            memory["round_bet_bb"] = None
+            memory["action"] = "UNKNOWN"
+            memory["action_at"] = 0.0
+
+    def _merge_player_observations(
+        self,
+        observations: list[dict],
+        now: float,
+    ) -> list[dict]:
+        self._reset_player_round_if_needed()
+        round_max_before = self.player_round_max_bet
+        current_keys: set[str] = set()
+        enriched: list[dict] = []
+
+        for raw in observations:
+            obs = dict(raw)
+            key = self._player_key(obs)
+            current_keys.add(key)
+            memory = self.player_memory.setdefault(key, {})
+
+            name = str(obs.get("name", "")).strip()
+            if name:
+                memory["name"] = name
+            memory["x"] = float(obs.get("x", memory.get("x", 0)))
+            memory["y"] = float(obs.get("y", memory.get("y", 0)))
+            memory["status"] = str(obs.get("status", "active"))
+
+            stack = obs.get("stack_bb")
+            if stack is not None:
+                memory["stack_bb"] = float(stack)
+
+            bet = obs.get("bet_bb")
+            previous_bet = memory.get("round_bet_bb")
+            if bet is not None:
+                bet = float(bet)
+                memory["round_bet_bb"] = bet
+
+            direct_action = str(obs.get("action", "unknown")).upper()
+            if direct_action == "UNKNOWN":
+                direct_action = ""
+
+            inferred_action = ""
+            if direct_action:
+                inferred_action = direct_action
+            elif bet is not None and previous_bet is not None and bet > previous_bet + 0.05:
+                street = str(_bridge_snapshot().get("street", "AGUARDANDO"))
+                if round_max_before <= 0.05:
+                    if street != "PRÉ-FLOP":
+                        inferred_action = "BET"
+                    elif bet > 1.05:
+                        inferred_action = "RAISE"
+                elif abs(bet - round_max_before) <= 0.15:
+                    inferred_action = "CALL"
+                elif bet > round_max_before + 0.15:
+                    inferred_action = "RAISE"
+
+            if inferred_action:
+                memory["action"] = inferred_action
+                memory["action_at"] = now
+
+            memory["last_seen"] = now
+            if bet is not None:
+                self.player_round_max_bet = max(self.player_round_max_bet, bet)
+
+            action = str(memory.get("action", "UNKNOWN")).upper()
+            result = {
+                "x": memory.get("x", 0),
+                "y": memory.get("y", 0),
+                "name": memory.get("name", ""),
+                "stack_bb": memory.get("stack_bb"),
+                "bet_bb": memory.get("round_bet_bb"),
+                "action": action,
+                "status": memory.get("status", "active"),
+                "stale": False,
+                "last_seen_age": 0.0,
+                "raw": str(obs.get("raw", ""))[:80],
+            }
+            complete = bool(
+                result["name"]
+                and result["stack_bb"] is not None
+                and action != "UNKNOWN"
+            )
+            result["data_state"] = "complete" if complete else "partial"
+            enriched.append(result)
+
+        # Preserve the last reliable named reading briefly instead of erasing it
+        # when one OCR frame misses the player.
+        for key, memory in list(self.player_memory.items()):
+            if key in current_keys or not memory.get("name"):
+                continue
+            age = max(0.0, now - float(memory.get("last_seen", 0) or 0))
+            if age > 12:
+                continue
+            enriched.append({
+                "x": memory.get("x", 0),
+                "y": memory.get("y", 0),
+                "name": memory.get("name", ""),
+                "stack_bb": memory.get("stack_bb"),
+                "bet_bb": memory.get("round_bet_bb"),
+                "action": str(memory.get("action", "UNKNOWN")).upper(),
+                "status": memory.get("status", "active"),
+                "stale": True,
+                "last_seen_age": round(age, 2),
+                "data_state": "stale",
+                "raw": "",
+            })
+
+        return enriched[:10]
+
     def _table_worker(self, region: dict, max_seats: int) -> None:
         try:
             result = analyze_table(grab_box(region), max_seats=max_seats)
@@ -1145,8 +1289,12 @@ class PokerVisionApp:
 
         count = int(data["player_count"])
         inactive = int(data.get("inactive_seats", 0))
-        max_seats = int(data.get("max_seats", self.config.get("table_max_seats", 9)))
+        max_seats = int(data.get("max_seats", _bridge_snapshot().get("table_max_seats", 9)))
         points = data.get("inactive_points", [])
+        players = self._merge_player_observations(
+            list(data.get("seat_observations", [])),
+            now,
+        )
         signature = (count, inactive, max_seats)
         self.table_tracker.observe(signature)
 
@@ -1174,6 +1322,28 @@ class PokerVisionApp:
                 f"inativos/vazios {inactive} · confirmado"
             )
         )
+        live_players = [p for p in players if not p.get("stale")]
+        complete = sum(p.get("data_state") == "complete" for p in live_players)
+        parts = []
+        for player in live_players[:8]:
+            name = player.get("name") or "?"
+            stack = player.get("stack_bb")
+            bet = player.get("bet_bb")
+            action = player.get("action", "UNKNOWN")
+            item = name
+            if stack is not None:
+                item += f" {stack:g}BB"
+            if bet is not None:
+                item += f" bet={bet:g}"
+            if action != "UNKNOWN":
+                item += f" {action}"
+            parts.append(item)
+        self.players_readout.configure(
+            text=(
+                f"ASSENTOS: {complete}/{len(live_players)} completos · "
+                + (" | ".join(parts) if parts else "nenhum jogador individual confirmado")
+            )
+        )
         _bridge_publish_table({
             "detected_player_count": count,
             "inactive_seats": inactive,
@@ -1182,7 +1352,7 @@ class PokerVisionApp:
             "table_scan_state": "confirmed",
             "table_scan_at": now,
             "inactive_points": points,
-            "seat_observations": data.get("seat_observations", []),
+            "seat_observations": players,
         })
 
         logged = ("confirmed", count, inactive, max_seats)
@@ -1195,6 +1365,10 @@ class PokerVisionApp:
                 confidence,
             )
             self.last_logged_table_state = logged
+            LOGGER.info(
+                "PLAYERS %s",
+                json.dumps(players, ensure_ascii=False, separators=(",", ":")),
+            )
 
     def _numeric_signature(self, data: dict) -> tuple:
         return (
@@ -1352,10 +1526,13 @@ class PokerVisionApp:
         self.board_tracker.reset()
         self.numeric_tracker.reset()
         self.table_tracker.reset()
+        self.player_memory.clear()
+        self.player_round_key = None
+        self.player_round_max_bet = 0.0
         _bridge_publish_table({
             "detected_player_count": None,
             "inactive_seats": None,
-            "table_max_seats": int(self.config.get("table_max_seats", 9) or 9),
+            "table_max_seats": int(_bridge_snapshot().get("table_max_seats", 9) or 9),
             "table_scan_confidence": "",
             "table_scan_state": "waiting" if self.config.get("table") else "disabled",
             "table_scan_at": 0.0,
