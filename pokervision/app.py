@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.7.2"
+APP_VERSION = "0.8.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -52,6 +52,7 @@ _BRIDGE_STATE = {
     "table_scan_state": "disabled",
     "table_scan_at": 0.0,
     "inactive_points": [],
+    "seat_observations": [],
     "updated_at": 0.0,
 }
 
@@ -128,6 +129,7 @@ def _bridge_publish_table(data: dict) -> None:
         "table_scan_state",
         "table_scan_at",
         "inactive_points",
+        "seat_observations",
     }
     with _BRIDGE_LOCK:
         for key, value in data.items():
@@ -1181,6 +1183,7 @@ class PokerVisionApp:
             "table_scan_state": "confirmed",
             "table_scan_at": now,
             "inactive_points": points,
+            "seat_observations": data.get("seat_observations", []),
         })
 
         logged = ("confirmed", count, inactive, max_seats)
@@ -1358,6 +1361,7 @@ class PokerVisionApp:
             "table_scan_state": "waiting" if self.config.get("table") else "disabled",
             "table_scan_at": 0.0,
             "inactive_points": [],
+            "seat_observations": [],
         })
         self.running = True
         _bridge_publish(running=True, confirmed=False)
