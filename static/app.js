@@ -287,6 +287,65 @@ function mapObservationsToCurrentSeats(observations,count){
   return mapped;
 }
 
+function mapPointsToLayout(points,count){
+  const layout=seatLayout(count);
+  const used=new Set();
+  (Array.isArray(points)?points:[]).forEach(point=>{
+    if(!Array.isArray(point)||point.length!==2) return;
+    const px=Number(point[0])*100;
+    const py=Number(point[1])*100;
+    let best=-1;
+    let bestDistance=Infinity;
+    layout.forEach(([x,y],i)=>{
+      if(used.has(i)) return;
+      const dx=(x-px)/100;
+      const dy=(y-py)/100;
+      const distance=dx*dx+dy*dy;
+      if(distance<bestDistance){
+        bestDistance=distance;
+        best=i;
+      }
+    });
+    if(best>=0 && bestDistance<=0.095) used.add(best);
+  });
+  return used;
+}
+
+function renderVisionPlayerDetails(){
+  const box=$('#visionPlayerDetails');
+  if(!box) return;
+  const observations=(Array.isArray(visionSeatObservations)?visionSeatObservations:[])
+    .slice()
+    .sort((a,b)=>(Number(a.y)||0)-(Number(b.y)||0));
+
+  if(!observations.length){
+    box.textContent='Leitura individual: nenhum jogador confirmado ainda.';
+    return;
+  }
+
+  const labelAction=action=>{
+    const value=String(action||'UNKNOWN').toUpperCase();
+    return value==='UNKNOWN'?'ação ?':actionLabel(value);
+  };
+
+  box.innerHTML=observations.map(obs=>{
+    const state=obs.data_state||'partial';
+    const stale=Boolean(obs.stale)||state==='stale';
+    const name=escapeHTML(obs.name||'Nome ?');
+    const stack=obs.stack_bb!=null?escapeHTML(formatBB(obs.stack_bb)+' BB'):'stack ?';
+    const bet=obs.bet_bb!=null?escapeHTML('aposta '+formatBB(obs.bet_bb)+' BB'):'aposta ?';
+    const action=escapeHTML(labelAction(obs.action));
+    const status=stale
+      ? 'DESATUALIZADO'
+      : state==='complete'
+      ? 'COMPLETO'
+      : obs.status==='disconnected'
+      ? 'DESCONECTADO'
+      : 'PARCIAL';
+    return `<span class="player-read ${escapeHTML(stale?'stale':state)}"><b>${name}</b> · ${stack} · ${bet} · ${action} · ${status}</span>`;
+  }).join('');
+}
+
 function renderVisionHealthOverlay(){
   const layer=$('#visionSeatHealth');
   if(!layer) return;
@@ -314,26 +373,31 @@ function renderVisionHealthOverlay(){
     if(tableError){
       health='error';
       label='Erro na leitura automática; modo básico continua ativo';
+    }else if(obs?.stale || obs?.data_state==='stale'){
+      health='partial';
+      const age=Number(obs.last_seen_age||0);
+      label=`${obs.name||'Jogador'} · última leitura há ${age.toFixed(1)}s`;
     }else if(obs?.status==='disconnected'){
       health='partial';
       label='Jogador desconectado; último dado conhecido mantido';
-    }else if(obs && Number(obs.stack_bb)>=0){
+    }else if(obs?.data_state==='complete'){
+      health='ok';
       const name=obs.name?String(obs.name):`Assento ${i+1}`;
       const stack=Number(obs.stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2});
-      const actionComplete=Boolean(obs.action && obs.action!=='unknown');
-      if(obs.name && actionComplete){
-        health='ok';
-        label=`${name} · stack ${stack} BB · ação ${obs.action}`;
-      }else{
-        health='partial';
-        label=`${name} · stack ${stack} BB · ação ainda não mapeada`;
-      }
+      const bet=obs.bet_bb!=null
+        ? Number(obs.bet_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})
+        : '?';
+      label=`${name} · stack ${stack} BB · aposta ${bet} BB · ${actionLabel(obs.action)}`;
     }else if(i===0 && heroComplete){
       health='ok';
       label=`Você · stack ${Number(state.hero_stack_bb).toLocaleString('pt-BR',{maximumFractionDigits:2})} BB`;
     }else if(tableConfirmed){
       health='partial';
-      label='Assento ativo; stack/nome ainda não confirmados';
+      if(obs?.name || obs?.stack_bb!=null){
+        label=`${obs?.name||'Jogador'} · leitura parcial`;
+      }else{
+        label='Assento ativo; nome/stack/aposta/ação ainda incompletos';
+      }
     }
 
     dot.className=`vision-seat-dot ${health}`;
@@ -342,6 +406,24 @@ function renderVisionHealthOverlay(){
     dot.title=label;
     layer.appendChild(dot);
   });
+
+  // Empty/inactive physical seats are drawn separately using the capacity
+  // layout; they must not shift the active-player position model.
+  const physicalCount=Number(tableMaxSeats||count);
+  if(SEAT_LAYOUTS[physicalCount]){
+    const inactive=mapPointsToLayout(visionInactivePoints,physicalCount);
+    seatLayout(physicalCount).forEach(([x,y],i)=>{
+      if(!inactive.has(i)) return;
+      const dot=document.createElement('span');
+      dot.className='vision-seat-dot absent';
+      dot.style.left=x+'%';
+      dot.style.top=y+'%';
+      dot.title='Ausente ou lugar vazio';
+      layer.appendChild(dot);
+    });
+  }
+
+  renderVisionPlayerDetails();
 }
 
 function renderTable(){
@@ -877,6 +959,7 @@ function applyVisionTableState(state){
   visionTableState=String(state?.table_scan_state||'disabled');
   visionInactivePoints=Array.isArray(state?.inactive_points)?state.inactive_points:[];
   visionSeatObservations=Array.isArray(state?.seat_observations)?state.seat_observations:[];
+  renderVisionPlayerDetails();
   const count=Number(state?.detected_player_count||0);
   const inactive=Number(state?.inactive_seats??0);
   const maxSeats=Number(state?.table_max_seats||0);
@@ -1035,6 +1118,8 @@ async function pollPokerVision(){
     renderVisionHealthOverlay();
     const meter=$('#visionPlayers');
     if(meter) meter.textContent=`Jogadores: sem sincronização · mantendo ${playerCount} · modo básico ativo`;
+    const details=$('#visionPlayerDetails');
+    if(details) details.textContent='Leitura individual: sem sincronização; modo básico continua disponível.';
     if(visionEnabled) setVisionBar('disconnected','Sem sincronização com PokerVision · manual disponível');
   }finally{
     visionTimer=setTimeout(pollPokerVision,500);
