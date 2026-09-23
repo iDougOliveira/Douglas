@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import re
-from PIL import Image
-
-from numeric_ocr import OCR_ERROR, ocr_text
 
 
 def _decimal(token: str) -> float | None:
@@ -106,7 +103,11 @@ def parse_tournament_hud_text(text: str) -> dict:
     return result
 
 
-def analyze_tournament_hud(image: Image.Image) -> dict:
+def analyze_tournament_hud(image) -> dict:
+    # Keep parsing logic dependency-free so unit tests do not need the Windows
+    # OCR stack. Runtime OCR dependencies are imported only when capturing.
+    from numeric_ocr import OCR_ERROR, ocr_text
+
     if OCR_ERROR:
         return {"valid": False, "error": OCR_ERROR, "raw_text": ""}
     text = ocr_text(image, numeric_only=False, multiline=True)
