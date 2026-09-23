@@ -25,7 +25,7 @@ from numeric_ocr import OCR_ERROR, read_pot, read_single_number
 from table_ocr import analyze_table
 
 
-APP_VERSION = "0.11.0"
+APP_VERSION = "0.11.1"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -1443,6 +1443,29 @@ class PokerVisionApp:
                 clean.get("hero_text", ""),
             )
             clean["hero_stack_bb"] = repaired
+
+        # The dedicated pot crop is fast but can occasionally misread one
+        # digit. Cross-check it against the independent full-table OCR, which
+        # only contributes a value when it sees an explicit "Pote: X BB".
+        table_pot = None
+        with self.table_lock:
+            if self.table_result:
+                table_pot = self.table_result.get("table_pot_bb")
+        numeric_pot = clean.get("pot_bb")
+        if table_pot is not None and float(table_pot) > 0:
+            if numeric_pot is None:
+                clean["pot_bb"] = float(table_pot)
+            else:
+                numeric_pot = float(numeric_pot)
+                table_pot = float(table_pot)
+                difference = abs(numeric_pot - table_pot) / max(table_pot, 0.01)
+                if difference > 0.12:
+                    LOGGER.warning(
+                        "NUMERIC pot disagreement crop=%s table=%s; using table label",
+                        numeric_pot,
+                        table_pot,
+                    )
+                    clean["pot_bb"] = table_pot
         return clean
 
     def _numeric_signature(self, data: dict) -> tuple:
