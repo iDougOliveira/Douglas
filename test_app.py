@@ -151,6 +151,7 @@ class VisionNumericRelayTests(unittest.TestCase):
             "table_scan_state": "confirmed",
             "table_scan_at": 123.5,
             "inactive_points": [[0.1, 0.2], [0.8, 0.2]],
+            "inactive_seat_indices": [1, 5],
             "seat_observations": [
                 {
                     "seat_index": 1,
@@ -165,6 +166,7 @@ class VisionNumericRelayTests(unittest.TestCase):
         self.assertEqual(state["table_scan_state"], "confirmed")
         self.assertEqual(state["table_scan_at"], 123.5)
         self.assertEqual(state["inactive_points"], [[0.1, 0.2], [0.8, 0.2]])
+        self.assertEqual(state["inactive_seat_indices"], [1, 5])
         self.assertEqual(state["seat_observations"][0]["name"], "Player1")
         self.assertEqual(state["seat_observations"][0]["seat_index"], 1)
         self.assertEqual(state["seat_observations"][0]["stack_bb"], 88.5)
