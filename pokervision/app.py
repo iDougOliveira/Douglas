@@ -69,6 +69,7 @@ _BRIDGE_STATE = {
 }
 
 _DEFAULT_POKERCOACH_TARGETS = (
+    "http://127.0.0.1:8765",
     "http://192.168.15.140:8765",
     "http://Beelink:8765",
     "http://beelink.local:8765",
