@@ -742,8 +742,18 @@ def _hu_bb(data, c, result, depth):
         return result
 
     if situation != "facing_raise":
-        result["notes"].append("Re-raise HU ainda requer uma árvore dedicada.")
-        return result
+        _set_range(
+            result,
+            "Spin HU BB · sequência avançada",
+            "Estratégia mista dependente da linha anterior e sizing",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
+        )
+        result["notes"].append(
+            "Re-raise HU exige a linha anterior completa. A V3.17.1 sinaliza MISTA em vez de SEM COBERTURA."
+        )
+        return _mixed(result, "MISTA — sequência HU completa necessária")
 
     if depth >= 20:
         nonallin = _expand_range("TT+ AJs+")
@@ -832,7 +842,7 @@ def decide_spin(data, c, result, postflop):
         result["notes"].insert(
             0,
             f"Camada Spin pós-flop: {c['players']}-handed, {depth:g} BB efetivos. "
-            "A V3.17 reutiliza a heurística de força/textura/pot odds; ranges multiway e frequências de solver ainda não são reproduzidos."
+            "A V3.17.1 reutiliza a heurística de força/textura/pot odds; ranges multiway e frequências de solver ainda não são reproduzidos."
         )
         _source(result, "course", "gto")
         result["strategy_status"] = "spin_postflop_heuristic"
