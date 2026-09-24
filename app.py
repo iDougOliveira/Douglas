@@ -22,18 +22,20 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parent
 STATIC = ROOT / "static"
 VERSION = (ROOT / "VERSION").read_text().strip() if (ROOT / "VERSION").exists() else "dev"
-DB_PATH = Path(os.getenv("POKERCOACH_DB", ROOT / "data" / "pokercoach.db"))
+DATA_ROOT = Path(os.getenv("POKERCOACH_DATA_DIR", ROOT / "data"))
+DB_PATH = Path(os.getenv("POKERCOACH_DB", DATA_ROOT / "pokercoach.db"))
 HOST = os.getenv("POKERCOACH_HOST", "0.0.0.0")
 PORT = int(os.getenv("POKERCOACH_PORT", "8765"))
 PASSWORD_HASH = os.getenv("POKERCOACH_PASSWORD_HASH", "")
 SESSION_SECRET = os.getenv("POKERCOACH_SESSION_SECRET", secrets.token_hex(32))
+DESKTOP_MODE = os.getenv("POKERCOACH_DESKTOP_MODE", "").strip().lower() in {"1", "true", "yes", "on"}
 
 POSITION_ORDER = strategy.POSITIONS
 
 VISION_LOCK = threading.Lock()
 VISION_STATES: dict[str, dict] = {}
 VISION_CONFIG_LOCK = threading.Lock()
-VISION_CONFIG_PATH = ROOT / "data" / "vision_config.json"
+VISION_CONFIG_PATH = DATA_ROOT / "vision_config.json"
 
 
 def load_vision_config() -> dict:
@@ -437,6 +439,12 @@ class Handler(SimpleHTTPRequestHandler):
         return json.loads(self.rfile.read(length) or b"{}")
 
     def authenticated(self) -> bool:
+        if DESKTOP_MODE:
+            try:
+                if ipaddress.ip_address(self.client_address[0]).is_loopback:
+                    return True
+            except ValueError:
+                pass
         cookies = http.cookies.SimpleCookie(self.headers.get("Cookie", ""))
         morsel = cookies.get("pc_session")
         return bool(morsel and valid_session(morsel.value))
@@ -444,7 +452,11 @@ class Handler(SimpleHTTPRequestHandler):
     def do_GET(self):
         path = urlparse(self.path).path
         if path == "/api/health":
-            return self.send_json({"status": "ok", "version": VERSION})
+            return self.send_json({
+                "status": "ok",
+                "version": VERSION,
+                "desktop_mode": DESKTOP_MODE,
+            })
         if path == "/api/vision/config":
             if not private_client(self.client_address[0]):
                 return self.send_json({"error": "Origem não permitida"}, 403)
