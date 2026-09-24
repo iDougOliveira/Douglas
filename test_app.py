@@ -53,7 +53,7 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(result["action"], "RAISE")
         self.assertEqual(result["hand"], "AKo")
         self.assertEqual(result["raise_to_bb"], 2.5)
-        self.assertEqual(result["engine_version"], "3.17.0")
+        self.assertEqual(result["engine_version"], "3.17.1")
         self.assertTrue(self.call("/api/session", {
             "played_at": "2026-09-21", "mode": "cash", "stakes": "NL10",
             "buy_in": 10, "cash_out": 13.5, "notes": "teste",

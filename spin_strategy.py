@@ -40,6 +40,10 @@ SPIN_SOURCES = {
         "title": "GTO Wizard — Spins com stacks simétricos e assimétricos",
         "url": "https://blog.gtowizard.com/new-spins-solutions-study-plans-and-ev-comparison/",
     },
+    "preflop_solver": {
+        "title": "PreflopRanges — Spin & Go solved charts 8–25 BB",
+        "url": "https://preflopranges.app/charts/spins/25bb",
+    },
 }
 
 
@@ -131,7 +135,7 @@ def _spin_header(result, c):
         result["notes"].append(
             "Stacks adversários detectados: "
             + ", ".join(f"{x:g} BB" for x in c["opponent_stacks"])
-            + ". Em 3-handed, a V3.17 usa o menor stack como aproximação conservadora; "
+            + ". Em 3-handed, a V3.17.1 usa o menor stack como aproximação conservadora; "
               "spots assimétricos completos continuam marcados como simplificação."
         )
         _source(result, "gto")
@@ -176,76 +180,111 @@ def _limp(result, reason="Completar / limp"):
     return result
 
 
+def _mixed(result, reason, profile=None):
+    result.update(
+        action="MIXED",
+        sizing=reason,
+        strategy_status="mixed_published_strategy",
+    )
+    if profile:
+        result["profile"] = profile
+    return result
+
+
+def _invalid_state(result, reason):
+    result.update(
+        action="ESTADO INVÁLIDO",
+        sizing=reason,
+        strategy_status="invalid_state",
+        profile="Spin & Go · sequência impossível",
+    )
+    result["notes"].append(
+        "Corrija a posição do botão ou a ação anterior; o motor não transforma um estado impossível em range."
+    )
+    return result
+
+
+def _nearest_standard_depth(depth):
+    return min((8, 10, 15, 20, 25), key=lambda value: abs(value - depth))
+
+
 def _three_btn(data, c, result, depth):
-    _source(result, "btn3")
-    if data.get("situation", "unopened") != "unopened":
-        result["notes"].append(
-            "No BTN 3-handed o motor especializado cobre primeiro a abertura. "
-            "Resposta a reshove será adicionada em uma tabela própria para não inferir frequências da imagem."
+    _source(result, "btn3", "preflop_solver")
+    situation = data.get("situation", "unopened")
+
+    # In 3-handed Spin the BTN is first to act preflop. A limp or ordinary
+    # raise cannot already exist before the BTN's first decision. If Hero
+    # opened and now faces a re-raise, the UI must use facing_3bet.
+    if situation in {"limped", "facing_raise"}:
+        return _invalid_state(
+            result,
+            "BTN 3-handed não pode enfrentar LIMP/RAISE antes de sua primeira ação. Verifique o botão.",
         )
-        return result
 
-    open25 = _specific(
-        "33+ A2s+ A5o+ K3s+ K8o+ Q4s+ 96s+ T9o+",
-        {"54s", "65s", "76s", "87s", "98s", "T9s"},
-    )
-    shove10 = _specific(
-        "22+ A2s+ A2o+ K6s+ KTo+ Q4s+ JTo",
-        {"87s", "98s", "T9s", "JTs", "QJs", "KQs"},
-    )
-    premium10 = _expand_range("TT+ AQs+ AKo")
-    stack_core = _expand_range("44+ A9s+ ATo+ KJs+")
-
-    if depth <= 11:
+    if situation in {"facing_3bet", "facing_4bet"}:
         _set_range(
             result,
-            "Spin 3h BTN · referência textual ~10 BB",
-            "22+ / qualquer A / K6s+ / KTo+ / Q4s+ / JTo+ / conectores 87s+; premiums podem min-raise",
-            shove10 | premium10,
-            10,
+            "Spin 3h BTN · resposta a re-raise",
+            "A resposta depende de quem re-aumentou, sizing e stack pareado",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
         )
-        if c["hand"] in premium10:
-            result["notes"].append(
-                "A fonte descreve TT+/AQs+ como mãos que podem permanecer no min-raise; "
-                "a resposta única do treinador usa raise 2 BB para esse núcleo."
-            )
-            return _raise(result, min(2.0, depth))
-        if c["hand"] in shove10:
-            return _shove(result, depth)
-        return _fold(result, "Fora do núcleo textual de shove/min-raise a ~10 BB")
-
-    if depth <= 18:
-        _set_range(
-            result,
-            "Spin 3h BTN · zona 16 BB · núcleo de stack-off publicado",
-            "44+ / ATo+ / A9s+ / KJs+; mãos marginais dependem das frequências do chart",
-            stack_core,
-            16,
-            "partial_published_reference",
-        )
-        if c["hand"] in stack_core:
-            result["notes"].append(
-                "A 16 BB a fonte alerta que o range fica mais estreito e surgem open-shoves. "
-                "Sem copiar a imagem/frequências, o treinador mantém ação única de min-raise apenas no núcleo "
-                "descrito como confortável para jogar pelo stack."
-            )
-            return _raise(result, 2.0)
         result["notes"].append(
-            "Esta mão pode pertencer a uma frequência de raise/shove/fold do chart de 16 BB; "
-            "o texto público não discrimina a ação. O motor não inventa essa frequência."
+            "Este é um ramo válido depois de Hero abrir, mas a interface rápida ainda não informa qual blind "
+            "re-aumentou. O motor marca MISTA em vez de inventar uma frequência única."
         )
-        return result
+        return _mixed(
+            result,
+            "MISTA — informe o agressor/sizing exato para separar call, shove e fold",
+        )
 
+    if situation != "unopened":
+        return _invalid_state(result, "Sequência pré-flop não reconhecida para BTN 3-handed.")
+
+    bucket = _nearest_standard_depth(depth)
+    # Majority-play sets published in text by the solved-chart source. At 8 BB
+    # the BTN solution is push/fold. At 10 BB the source mixes shove/min-raise;
+    # PokerStars' textual course is used only to keep the premium min-raise core.
+    majority_ranges = {
+        8: "22+ A2s+ K4s+ Q8s+ J8s+ T7s+ 97s+ 86s+ 76s+ 65s+ A2o+ K9o+ QTo+ JTo+",
+        10: "22+ A2s+ K4s+ Q7s+ J7s+ T8s+ 97s+ 87s+ 76s+ A2o+ K9o+ QTo+ JTo+",
+        15: "22+ A2s+ K5s+ Q7s+ J8s+ T7s+ 97s+ 86s+ 76s+ A5o+ K9o+ QTo+ JTo+ T9o+",
+        20: "44+ A2s+ K4s+ Q5s+ J7s+ T7s+ 96s+ 86s+ 75s+ 65s+ 54s+ A7o+ A5o K9o+ Q9o+ JTo+ T9o+",
+        25: "33+ A2s+ K3s+ Q4s+ J5s+ T6s+ 96s+ 85s+ 75s+ 64s+ 54s+ A5o+ K9o+ Q9o+ J9o+ T9o+",
+    }
+    playable = _expand_range(majority_ranges[bucket])
     _set_range(
         result,
-        "Spin 3h BTN · abertura 25 BB",
-        "33+ / 54s+ / A2s+ / A5o+ / K3s+ / K8o+ / Q4s+ / 96s+ / T9o+",
-        open25,
-        25,
+        f"Spin 3h BTN · solved-chart majority policy {bucket} BB",
+        majority_ranges[bucket],
+        playable,
+        bucket,
+        "solver_majority_summary",
     )
-    if c["hand"] in open25:
-        return _raise(result, 2.0)
-    return _fold(result, "Fora do resumo textual de abertura 25 BB")
+    result["notes"].append(
+        f"Profundidade real {depth:g} BB → referência pública mais próxima {bucket} BB. "
+        "O conjunto usa mãos abertas em pelo menos 50% das frequências publicadas; abaixo desse limiar "
+        "o treinador escolhe FOLD como ação majoritária, sem apagar a existência de mixes menores."
+    )
+
+    if c["hand"] not in playable:
+        return _fold(result, f"FOLD majoritário na referência {bucket} BB")
+
+    if bucket == 8:
+        return _shove(result, depth)
+
+    if bucket == 10:
+        premium = _expand_range("TT+ AQs+ AKo")
+        if c["hand"] in premium:
+            result["notes"].append(
+                "A 10 BB o material textual mantém um núcleo premium em min-raise; o restante do conjunto "
+                "majoritário é treinado pelo ramo de shove."
+            )
+            return _raise(result, min(2.0, depth))
+        return _shove(result, depth)
+
+    return _raise(result, min(2.0, depth))
 
 
 def _three_sb(data, c, result, depth):
@@ -305,10 +344,19 @@ def _three_sb(data, c, result, depth):
         return _fold(result, "Shove/fold simplificado fora do núcleo publicado")
 
     if situation != "unopened":
-        result["notes"].append(
-            "Depois de limp/re-raise no SB 3-handed há frequências específicas não transcritas no resumo textual."
+        _set_range(
+            result,
+            "Spin 3h SB · sequência após ação do BTN",
+            "Estratégia mista dependente da sequência completa, sizing e agressor",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
         )
-        return result
+        result["notes"].append(
+            "Limp/re-raise no SB 3-handed é um ramo válido, mas a interface curta ainda não preserva toda a sequência. "
+            "A V3.17.1 retorna MISTA em vez de SEM COBERTURA."
+        )
+        return _mixed(result, "MISTA — sequência completa necessária para escolher raise/call/fold")
 
     if depth <= 11:
         premium = _expand_range("QQ+ AKs AKo")
@@ -356,9 +404,10 @@ def _three_sb(data, c, result, depth):
         if c["hand"] in shove:
             return _shove(result, depth)
         result["notes"].append(
-            "O chart completo também contém limps/raises mistos. Sem frequência textual para esta mão, o treinador não força uma ação."
+            "O chart completo contém limps/raises/shoves mistos para esta classe. "
+            "O treinador preserva isso como MISTA em vez de declarar ausência de range."
         )
-        return result
+        return _mixed(result, "MISTA — limp/raise/shove conforme frequência do chart")
 
     limps = _specific(_pairs("2", "7"), {"KTs","AJs","ATs","AJo","ATo"})
     premiums = _expand_range("JJ+ AQs+ AKo")
@@ -375,10 +424,10 @@ def _three_sb(data, c, result, depth):
     if c["hand"] in limps:
         return _limp(result, "Limp para preservar a faixa de limp-call/limp-shove")
     result["notes"].append(
-        "O material público descreve uma mistura ampla de limp/raise/fold, mas o combo exato está na imagem. "
-        "O motor só decide as classes explicitamente descritas no texto."
+        "O material público descreve mistura ampla de limp/raise/fold. "
+        "Quando a frequência individual não está no resumo textual, a V3.17.1 mantém a classificação MISTA."
     )
-    return result
+    return _mixed(result, "MISTA — limp/raise/fold no SB profundo")
 
 
 def _all_hands():
@@ -456,8 +505,19 @@ def _three_bb(data, c, result, depth):
         return result
 
     if situation != "facing_raise":
-        result["notes"].append("Re-raise/4-bet 3-handed exige árvore específica ainda não implementada no módulo Spin.")
-        return result
+        _set_range(
+            result,
+            "Spin 3h BB · sequência avançada",
+            "Ramo misto dependente da sequência exata",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
+        )
+        result["notes"].append(
+            "Re-raise/4-bet no BB exige saber a sequência e o agressor. "
+            "A V3.17.1 sinaliza MISTA, nunca SEM COBERTURA para um estado pré-flop válido."
+        )
+        return _mixed(result, "MISTA — sequência/agressor necessários")
 
     premium = _expand_range("JJ+ AJs+")
     reshove25 = _specific("22+ ATo+ KQo")
@@ -490,8 +550,10 @@ def _three_bb(data, c, result, depth):
         )
         if c["hand"] in shove:
             return _shove(result, depth)
-        result["notes"].append("Calls marginais dependem da posição do raiser e do chart completo.")
-        return result
+        result["notes"].append(
+            "Calls marginais dependem da posição do raiser e do chart completo; esta classe permanece estratégia mista."
+        )
+        return _mixed(result, "MISTA — call/fold depende do raiser")
 
     shove15 = _specific(_pairs("2", "J"), "A8o+ A2s A3s A4s A5s", {"87s","98s","T9s","JTs"})
     premium15 = _expand_range("QQ+ AKs")
@@ -516,11 +578,19 @@ def _three_bb(data, c, result, depth):
 def _hu_button(data, c, result, depth):
     _source(result, "hubtn")
     if data.get("situation", "unopened") != "unopened":
-        result["notes"].append(
-            "O módulo HU BTN desta entrega cobre a decisão inicial. Reações a raise sobre limp/min-raise "
-            "serão separadas para preservar as frequências mistas do material."
+        _set_range(
+            result,
+            "Spin HU BTN · reação após ação do BB",
+            "Estratégia mista dependente da linha limp/raise e sizing",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
         )
-        return result
+        result["notes"].append(
+            "Reações HU após limp/min-raise dependem da linha anterior. A V3.17.1 mantém MISTA "
+            "quando a interface não fornece a sequência completa."
+        )
+        return _mixed(result, "MISTA — reação HU depende da linha anterior")
 
     if depth <= 11:
         shove = _specific(
@@ -672,8 +742,18 @@ def _hu_bb(data, c, result, depth):
         return result
 
     if situation != "facing_raise":
-        result["notes"].append("Re-raise HU ainda requer uma árvore dedicada.")
-        return result
+        _set_range(
+            result,
+            "Spin HU BB · sequência avançada",
+            "Estratégia mista dependente da linha anterior e sizing",
+            _all_hands(),
+            _nearest_standard_depth(depth),
+            "mixed_published_strategy",
+        )
+        result["notes"].append(
+            "Re-raise HU exige a linha anterior completa. A V3.17.1 sinaliza MISTA em vez de SEM COBERTURA."
+        )
+        return _mixed(result, "MISTA — sequência HU completa necessária")
 
     if depth >= 20:
         nonallin = _expand_range("TT+ AJs+")
@@ -716,8 +796,10 @@ def _hu_bb(data, c, result, depth):
         if _all_suited(c["hand"]):
             result.update(action="CALL", sizing="Defender suited; faixa de call segue muito ampla")
             return result
-        result["notes"].append("Offsuit marginal depende do chart completo; sem frequência textual o motor não força ação.")
-        return result
+        result["notes"].append(
+            "Offsuit marginal depende do chart completo; a estratégia é preservada como mista."
+        )
+        return _mixed(result, "MISTA — call/fold em frequência")
 
     traps = {"AA", "KK"}
     shove = _specific("22+ A2o+ A2s+ K2o+ K2s+ Q8s+")
@@ -760,7 +842,7 @@ def decide_spin(data, c, result, postflop):
         result["notes"].insert(
             0,
             f"Camada Spin pós-flop: {c['players']}-handed, {depth:g} BB efetivos. "
-            "A V3.17 reutiliza a heurística de força/textura/pot odds; ranges multiway e frequências de solver ainda não são reproduzidos."
+            "A V3.17.1 reutiliza a heurística de força/textura/pot odds; ranges multiway e frequências de solver ainda não são reproduzidos."
         )
         _source(result, "course", "gto")
         result["strategy_status"] = "spin_postflop_heuristic"
