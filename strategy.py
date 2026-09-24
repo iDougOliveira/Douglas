@@ -5,7 +5,7 @@ from pathlib import Path
 
 from spin_strategy import decide_spin
 
-ENGINE_VERSION = "3.17.1"
+ENGINE_VERSION = "3.18.0"
 POSITIONS = {int(k): v for k, v in json.loads((Path(__file__).parent / "static/positions.json").read_text()).items()}
 RANKS = "23456789TJQKA"
 SOURCES = {

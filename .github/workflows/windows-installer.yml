@@ -1,0 +1,120 @@
+name: Windows installer
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "VERSION"
+      - "app.py"
+      - "strategy.py"
+      - "spin_strategy.py"
+      - "static/**"
+      - "pokervision/**"
+      - "windows/**"
+      - ".github/workflows/windows-installer.yml"
+  pull_request:
+    branches: [main]
+    paths:
+      - "VERSION"
+      - "app.py"
+      - "strategy.py"
+      - "spin_strategy.py"
+      - "static/**"
+      - "pokervision/**"
+      - "windows/**"
+      - ".github/workflows/windows-installer.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Install build dependencies
+        shell: pwsh
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pyinstaller -r pokervision\requirements.txt
+
+      - name: Validate Windows entrypoints
+        shell: pwsh
+        run: |
+          python -m py_compile windows\launcher.py windows\server.py
+          python -m py_compile pokervision\app.py pokervision\recognizer.py pokervision\numeric_ocr.py pokervision\table_ocr.py
+
+      - name: Build executables
+        shell: pwsh
+        run: |
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name PokerCoach windows\launcher.py
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name PokerCoachServer --paths . --add-data "static;static" --add-data "VERSION;." windows\server.py
+          python -m PyInstaller --noconfirm --clean --onefile --noconsole --name PokerVision --paths pokervision pokervision\app.py
+
+      - name: Smoke test bundled local server
+        shell: pwsh
+        run: |
+          $expected = (Get-Content VERSION -Raw).Trim()
+          $proc = Start-Process -FilePath ".\dist\PokerCoachServer.exe" -PassThru
+          try {
+            $health = $null
+            for ($i = 0; $i -lt 40; $i++) {
+              try {
+                $health = Invoke-RestMethod -Uri "http://127.0.0.1:8765/api/health" -TimeoutSec 1
+                break
+              } catch {
+                Start-Sleep -Milliseconds 250
+              }
+            }
+            if ($null -eq $health) { throw "Servidor empacotado não respondeu." }
+            if ($health.status -ne "ok") { throw "Health status inválido: $($health.status)" }
+            if ($health.version -ne $expected) { throw "Versão inválida: $($health.version) esperado $expected" }
+            if (-not $health.desktop_mode) { throw "Desktop mode não foi ativado." }
+          } finally {
+            if (!$proc.HasExited) { Stop-Process -Id $proc.Id -Force }
+          }
+
+      - name: Install Inno Setup
+        shell: pwsh
+        run: |
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          if (!(Test-Path $iscc)) {
+            choco install innosetup -y --no-progress
+          }
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
+          & $iscc "/DMyAppVersion=$version" "windows\installer.iss"
+          $setup = "windows\Output\PokerCoach-Setup-$version.exe"
+          if (!(Test-Path $setup)) { throw "Instalador não foi gerado: $setup" }
+
+      - name: Upload installer artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: PokerCoach-Windows-Installer
+          path: windows/Output/PokerCoach-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Publish versioned GitHub release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $version = (Get-Content VERSION -Raw).Trim()
+          $tag = "v$version"
+          $asset = "windows\Output\PokerCoach-Setup-$version.exe"
+          gh release view $tag *> $null
+          if ($LASTEXITCODE -ne 0) {
+            gh release create $tag --target "${{ github.sha }}" --title "PokerCoach $version" --notes "Instalador Windows standalone: abre PokerVision e o painel web local automaticamente. Não exige Python instalado."
+          }
+          gh release upload $tag $asset --clobber

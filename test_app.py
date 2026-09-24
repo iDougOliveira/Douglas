@@ -41,6 +41,17 @@ class PokerCoachTest(unittest.TestCase):
         )
         return json.loads(cls.client.open(req).read())
 
+    def test_desktop_mode_loopback_is_auto_authenticated(self):
+        previous = app.DESKTOP_MODE
+        app.DESKTOP_MODE = True
+        try:
+            health = self.call("/api/health")
+            self.assertTrue(health["desktop_mode"])
+            summary = self.call("/api/summary")
+            self.assertIn("sessions", summary)
+        finally:
+            app.DESKTOP_MODE = previous
+
     def test_end_to_end(self):
         self.assertEqual(self.call("/api/health")["status"], "ok")
         self.assertTrue(self.call("/api/login", {"password": "senha-teste"})["ok"])
@@ -53,7 +64,7 @@ class PokerCoachTest(unittest.TestCase):
         self.assertEqual(result["action"], "RAISE")
         self.assertEqual(result["hand"], "AKo")
         self.assertEqual(result["raise_to_bb"], 2.5)
-        self.assertEqual(result["engine_version"], "3.17.1")
+        self.assertEqual(result["engine_version"], "3.18.0")
         self.assertTrue(self.call("/api/session", {
             "played_at": "2026-09-21", "mode": "cash", "stakes": "NL10",
             "buy_in": 10, "cash_out": 13.5, "notes": "teste",

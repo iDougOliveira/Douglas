@@ -1,5 +1,9 @@
 # PokerVision
 
+## V0.13.0 — pacote Windows standalone
+
+A V0.13.0 pode ser instalada junto com o PokerCoach. O atalho inicia o servidor local em `127.0.0.1:8765`, abre a página de análise e abre o PokerVision para recorte/calibração. O pacote inclui o runtime Python. Tesseract continua opcional para OCR numérico de stack/pote/blinds.
+
 Aplicativo Windows de captura por coordenadas para o PokerCoach.
 
 ## V0.2.1

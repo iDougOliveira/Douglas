@@ -1,10 +1,10 @@
 # PokerCoach Local
 
-Painel web local para estudo/revisão de mãos e gestão de banca. Funciona no navegador do celular ou computador; não requer instalação nesses dispositivos.
+Painel local para estudo/revisão de mãos e gestão de banca. No Beelink continua funcionando como serviço web; no Windows 10/11 x64 agora também existe instalador standalone que inclui o servidor local e o PokerVision.
 
 Interface visual: escolha de 2 a 10 jogadores, clique no assento com o botão e selecione as duas cartas no baralho gráfico. Em heads-up, o botão também é SB.
 
-## Motor 3.17.1
+## PokerCoach 3.18.0
 
 O módulo `strategy.py` substitui integralmente as heurísticas antigas. Cada resultado informa perfil, fonte, motivo e limites; o histórico registra a entrada usada. Não existe LLM nem sorteio de ação.
 
@@ -32,6 +32,22 @@ Código oficial: `https://github.com/iDougOliveira/Douglas`
 - Não use as recomendações durante partidas comerciais. Consulte as regras da sala.
 - Os ranges são educacionais e simplificados, não uma solução GTO.
 - O modo torneio ainda não calcula ICM.
+
+## Instalador Windows standalone
+
+A versão 3.18.0 gera `PokerCoach-Setup-3.18.0.exe` automaticamente no GitHub Actions e publica o executável na release da versão.
+
+O usuário final não precisa instalar Python. Ao abrir o atalho **PokerCoach**:
+
+1. o servidor web local inicia oculto em `127.0.0.1:8765`;
+2. o navegador padrão abre automaticamente na página de análise;
+3. o **PokerVision 0.13.0** abre para o recorte/calibração da mesa;
+4. os dados ficam em `%LOCALAPPDATA%\PokerCoach`;
+5. no modo desktop a autenticação é liberada somente para conexões loopback locais; o servidor não é exposto na rede.
+
+O instalador oferece uma opção para tentar instalar Tesseract OCR via Winget. O Tesseract é usado para stack/pote e outros números; o reconhecimento de cartas continua disponível mesmo sem ele.
+
+Código de empacotamento: `windows/launcher.py`, `windows/server.py`, `windows/installer.iss` e `.github/workflows/windows-installer.yml`.
 
 ## Instalação no Debian/Beelink
 
