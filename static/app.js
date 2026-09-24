@@ -93,6 +93,8 @@ const ACTION_LABELS={
   'RAISE':'AUMENTAR',
   'ALL-IN':'ALL-IN',
   'LIMP':'LIMP',
+  'MIXED':'MISTA',
+  'ESTADO INVÁLIDO':'ESTADO INVÁLIDO',
   'SEM AÇÃO':'SEM AÇÃO',
   'SEM COBERTURA':'SEM COBERTURA'
 };
@@ -1593,9 +1595,13 @@ function renderResult(r){
   const bet=r.bet_bb!=null?` · <b>${Number(r.bet_bb).toFixed(2)} BB</b>`:'';
   const label=actionLabel(r.action);
   const uncovered=r.action==='SEM COBERTURA';
+  const invalidState=r.action==='ESTADO INVÁLIDO';
+  const mixedState=r.action==='MIXED';
   box.innerHTML=`
     <div class="decision ${escapeHTML(String(r.action).toLowerCase().replaceAll(' ','-'))}">${escapeHTML(label)}</div>
     ${uncovered?'<div class="coverage-warning">O motor ainda não possui range suficiente para transformar este cenário em DESISTIR / PAGAR / AUMENTAR sem inventar uma estratégia.</div>':''}
+    ${invalidState?'<div class="coverage-warning">Sequência impossível para a posição atual. Confira onde está o botão antes de usar qualquer range.</div>':''}
+    ${mixedState?'<div class="coverage-warning">Estratégia mista: existe range para o spot, mas a ação depende de frequência/linha que a entrada atual não separa completamente.</div>':''}
     <h2>${escapeHTML(r.hand)} · ${escapeHTML(r.sizing)}${bet}</h2>
     ${board}
     <p><b>${escapeHTML(r.profile)}</b></p>
