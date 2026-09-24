@@ -24,7 +24,7 @@ UninstallDisplayName=PokerCoach {#MyAppVersion}
 
 [Tasks]
 Name: "desktopicon"; Description: "Criar atalho na área de trabalho"; GroupDescription: "Atalhos:"; Flags: unchecked
-Name: "tesseract"; Description: "Tentar instalar Tesseract OCR para leitura de stack/pote (requer Winget e pode pedir confirmação)"; GroupDescription: "OCR numérico:"; Flags: unchecked
+Name: "tesseract"; Description: "Tentar instalar Tesseract OCR para leitura de stack/pote (requer Winget e pode pedir confirmação)"; GroupDescription: "OCR numérico:"
 
 [Files]
 Source: "..\dist\PokerCoach.exe"; DestDir: "{app}"; Flags: ignoreversion
