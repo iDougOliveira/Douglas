@@ -1,4 +1,5 @@
 import strategy
+import spin_strategy
 import unittest
 import math
 from strategy import decide, expand_range, normalize_hand, PROFILES, RANKS
@@ -347,6 +348,72 @@ class StrategyTest(unittest.TestCase):
         )
         self.assertEqual(result["action"], "SEM COBERTURA")
         self.assertIn("3-handed", " ".join(result["notes"]))
+
+    def test_spin_button_k4s_25bb_regression(self):
+        result = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=24.5,
+            opponent_stacks_bb=[24, 25],
+            card1="Kc", card2="4c", situation="unopened",
+        )
+        self.assertEqual(result["action"], "RAISE")
+        self.assertEqual(result["study_stack_bb"], 25)
+        self.assertEqual(result["raise_to_bb"], 2)
+
+    def test_spin_button_impossible_pre_action_is_flagged(self):
+        result = review(
+            mode="spin", player_count=3, position="BTN", stack_bb=24.5,
+            opponent_stacks_bb=[24, 25],
+            card1="Kc", card2="4c",
+            situation="facing_raise", preflop_pressure="medium",
+        )
+        self.assertEqual(result["action"], "ESTADO INVÁLIDO")
+        self.assertEqual(result["strategy_status"], "invalid_state")
+        self.assertIn("botão", " ".join(result["notes"]).lower())
+
+    def test_spin_standard_preflop_matrix_has_no_uncovered_action(self):
+        def cards(hand):
+            if len(hand) == 2:
+                return hand[0] + "s", hand[1] + "h"
+            if hand.endswith("s"):
+                return hand[0] + "s", hand[1] + "s"
+            return hand[0] + "s", hand[1] + "h"
+
+        all_hands = sorted(spin_strategy._all_hands())
+        for depth in (8, 10, 15, 20, 25):
+            for hand in all_hands:
+                card1, card2 = cards(hand)
+                for position, situation, pressure in (
+                    ("BTN", "unopened", "none"),
+                    ("SB", "unopened", "none"),
+                    ("SB", "facing_raise", "medium"),
+                    ("SB", "facing_raise", "allin"),
+                    ("BB", "limped", "none"),
+                    ("BB", "facing_raise", "medium"),
+                    ("BB", "facing_raise", "allin"),
+                ):
+                    with self.subTest(depth=depth, hand=hand, position=position, situation=situation, pressure=pressure):
+                        result = review(
+                            mode="spin", player_count=3, position=position,
+                            stack_bb=depth, opponent_stacks_bb=[depth, depth],
+                            card1=card1, card2=card2,
+                            situation=situation, preflop_pressure=pressure,
+                        )
+                        self.assertNotEqual(result["action"], "SEM COBERTURA")
+
+                for position, situation, pressure in (
+                    ("BTN/SB", "unopened", "none"),
+                    ("BB", "limped", "none"),
+                    ("BB", "facing_raise", "medium"),
+                    ("BB", "facing_raise", "allin"),
+                ):
+                    with self.subTest(depth=depth, hand=hand, hu_position=position, situation=situation, pressure=pressure):
+                        result = review(
+                            mode="spin", player_count=2, position=position,
+                            stack_bb=depth, opponent_stacks_bb=[depth],
+                            card1=card1, card2=card2,
+                            situation=situation, preflop_pressure=pressure,
+                        )
+                        self.assertNotEqual(result["action"], "SEM COBERTURA")
 
     def test_spin_postflop_keeps_specialized_context(self):
         result = review(
