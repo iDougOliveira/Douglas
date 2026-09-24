@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import sys
@@ -43,7 +44,10 @@ def app_env() -> dict[str, str]:
 def server_ready(timeout: float = 0.7) -> bool:
     try:
         with urllib.request.urlopen(HEALTH_URL, timeout=timeout) as response:
-            return response.status == 200
+            if response.status != 200:
+                return False
+            payload = json.loads(response.read().decode("utf-8"))
+            return payload.get("status") == "ok" and payload.get("desktop_mode") is True
     except Exception:
         return False
 
