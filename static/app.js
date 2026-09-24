@@ -1669,6 +1669,18 @@ async function loadSummary(){
   }catch(e){}
 }
 
+async function initDesktopSession(){
+  try{
+    const health=await api('/api/health');
+    if(health?.desktop_mode){
+      $('#login').hidden=true;
+      $('#app').hidden=false;
+      document.body.classList.add('desktop-mode');
+      loadSummary();
+    }
+  }catch(e){}
+}
+
 $('#sessionForm').played_at.value=new Date().toISOString().slice(0,10);
 ['card1','card2',...boardFields].forEach(renderCardSlot);
 updateStreet();
@@ -1677,3 +1689,4 @@ initGameType();
 initTable();
 initVisionConfig();
 initPokerVision();
+initDesktopSession();
