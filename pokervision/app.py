@@ -26,7 +26,7 @@ from table_ocr import SEAT_LAYOUTS, analyze_table, infer_player_count
 from tournament_ocr import analyze_tournament_hud
 
 
-APP_VERSION = "0.12.0"
+APP_VERSION = "0.13.0"
 APP_NAME = "PokerVision"
 BRIDGE_HOST = "127.0.0.1"
 BRIDGE_PORT = 8766
@@ -81,7 +81,7 @@ _DELIVERY_LOCK = threading.Lock()
 _DELIVERY_STATUS = {
     "ok": False,
     "target": "",
-    "message": "aguardando envio ao Beelink",
+    "message": "aguardando conexão com PokerCoach",
     "updated_at": 0.0,
 }
 
@@ -256,7 +256,7 @@ def delivery_status() -> dict:
         return dict(_DELIVERY_STATUS)
 
 
-def start_beelink_publisher() -> None:
+def start_pokercoach_publisher() -> None:
     """Push the latest confirmed PokerVision state to PokerCoach on the LAN."""
     def run() -> None:
         preferred: str | None = None
@@ -333,7 +333,7 @@ def start_beelink_publisher() -> None:
 
     threading.Thread(
         target=run,
-        name="PokerVisionBeelinkPublisher",
+        name="PokerVisionPokerCoachPublisher",
         daemon=True,
     ).start()
 
@@ -850,7 +850,7 @@ class PokerVisionApp:
         self.street_readout.pack(anchor="w", pady=(8, 0))
         self.bridge_readout = ttk.Label(
             coords,
-            text="SITE: conectando ao PokerCoach no Beelink…",
+            text="SITE: conectando ao PokerCoach…",
             style="Muted.TLabel",
         )
         self.bridge_readout.pack(anchor="w", pady=(5, 0))
@@ -1882,7 +1882,7 @@ class PokerVisionApp:
                 )
             else:
                 self.bridge_readout.configure(
-                    text=f"SITE: aguardando Beelink · {delivery['message'][:70]}"
+                    text=f"SITE: aguardando PokerCoach · {delivery['message'][:70]}"
                 )
 
             self.schedule_numeric_scan()
@@ -2066,7 +2066,7 @@ def main() -> None:
     enable_dpi_awareness()
     setup_logging()
     start_bridge_server()
-    start_beelink_publisher()
+    start_pokercoach_publisher()
     root = tk.Tk()
     PokerVisionApp(root)
     root.mainloop()
